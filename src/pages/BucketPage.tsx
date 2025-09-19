@@ -1,10 +1,10 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useState } from "react";
 import { useParams, Link } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { s3Client } from "@/lib/s3Client";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { ListObjectsV2Command, _Object, CommonPrefix } from "@aws-sdk/client-s3";
-import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { ListObjectsV2Command, _Object, CommonPrefix, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import {
   Card,
@@ -75,13 +75,9 @@ interface PreviewState {
 const BucketPage = () => {
   const { bucketName } = useParams<{ bucketName: string }>();
   const { session } = useAuth();
-  const [bucketDetails, setBucketDetails] = useState<BucketDetails | null>(null);
-  const [items, setItems] = useState<BucketItem[]>([]);
-  const [members, setMembers] = useState<BucketMember[]>([]);
+  const queryClient = useQueryClient();
+
   const [currentPrefix, setCurrentPrefix] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [inviteEmails, setInviteEmails] = useState("");
   const [isInviting, setIsInviting] = useState(false);
   const [isCreateFolderOpen, setCreateFolderOpen] = useState(false);
@@ -91,58 +87,46 @@ const BucketPage = () => {
   const [previewState, setPreviewState] = useState<PreviewState | null>(null);
   const [historyTarget, setHistoryTarget] = useState<string | null>(null);
 
-  const fetchBucketData = useCallback(async () => {
-    if (!bucketName || !session) return;
-    if (!s3Client) {
-      setError("S3 client is not initialized.");
-      setLoading(false);
-      return;
+  const fetchBucketData = async () => {
+    if (!bucketName || !s3Client) {
+      throw new Error("Client not initialized or bucket name is missing.");
     }
 
-    try {
-      // Don't show main loader on refresh
-      if (!isRefreshing) {
-        setLoading(true);
-      }
-      const { data: bucketData, error: supabaseError } = await supabase
-        .from("buckets")
-        .select("id, owner_id, is_public")
-        .eq("name", bucketName)
-        .single();
+    const { data: bucketData, error: supabaseError } = await supabase
+      .from("buckets")
+      .select("id, owner_id, is_public")
+      .eq("name", bucketName)
+      .single();
 
-      if (supabaseError || !bucketData) {
-        throw new Error("Bucket not found or you don't have permission to view it.");
-      }
-      setBucketDetails(bucketData);
-
-      const s3Data = await s3Client.send(
-        new ListObjectsV2Command({ Bucket: bucketName, Prefix: currentPrefix, Delimiter: "/" })
-      );
-      
-      const folders: BucketItem[] = (s3Data.CommonPrefixes || []).map(p => ({ ...p, type: 'folder' }));
-      const files: BucketItem[] = (s3Data.Contents || []).filter(c => c.Key !== currentPrefix).map(c => ({ ...c, type: 'file' }));
-      setItems([...folders, ...files]);
-
-      const { data: memberData, error: memberError } = await supabase.rpc('get_bucket_members', { p_bucket_id: bucketData.id });
-      if (memberError) throw new Error(`Failed to fetch members: ${memberError.message}`);
-      setMembers(memberData || []);
-
-    } catch (err: any) {
-      console.error(err);
-      setError(err.message || "Failed to fetch bucket data.");
-    } finally {
-      setLoading(false);
+    if (supabaseError || !bucketData) {
+      throw new Error("Bucket not found or you don't have permission to view it.");
     }
-  }, [bucketName, session, currentPrefix, isRefreshing]);
 
-  useEffect(() => {
-    fetchBucketData();
-  }, [fetchBucketData]);
+    const s3Data = await s3Client.send(
+      new ListObjectsV2Command({ Bucket: bucketName, Prefix: currentPrefix, Delimiter: "/" })
+    );
+    
+    const folders: BucketItem[] = (s3Data.CommonPrefixes || []).map(p => ({ ...p, type: 'folder' }));
+    const files: BucketItem[] = (s3Data.Contents || []).filter(c => c.Key !== currentPrefix).map(c => ({ ...c, type: 'file' }));
+    const items = [...folders, ...files];
 
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    await fetchBucketData();
-    setIsRefreshing(false);
+    const { data: memberData, error: memberError } = await supabase.rpc('get_bucket_members', { p_bucket_id: bucketData.id });
+    if (memberError) throw new Error(`Failed to fetch members: ${memberError.message}`);
+    
+    return { bucketDetails: bucketData, items, members: memberData || [] };
+  };
+
+  const { data, error, isLoading, isFetching, isError } = useQuery({
+    queryKey: ['bucketData', bucketName, currentPrefix],
+    queryFn: fetchBucketData,
+    refetchOnWindowFocus: false, // This is the fix
+    enabled: !!bucketName && !!session,
+  });
+
+  const { bucketDetails, items = [], members = [] } = data || {};
+
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['bucketData', bucketName, currentPrefix] });
   };
 
   const handleFolderCreated = (newFolderPrefix: string) => {
@@ -157,8 +141,8 @@ const BucketPage = () => {
         .update({ is_public: isPublic })
         .eq("id", bucketDetails.id);
       if (error) throw error;
-      setBucketDetails({ ...bucketDetails, is_public: isPublic });
       showSuccess(`Bucket is now ${isPublic ? 'public' : 'private'}.`);
+      queryClient.invalidateQueries({ queryKey: ['bucketData', bucketName, currentPrefix] });
     } catch (err) {
       console.error(err);
       showError("Failed to update bucket privacy.");
@@ -183,7 +167,7 @@ const BucketPage = () => {
     dismissToast(loadingToast);
     showSuccess("Invitations sent.");
     setInviteEmails("");
-    fetchBucketData();
+    queryClient.invalidateQueries({ queryKey: ['bucketData', bucketName, currentPrefix] });
     setIsInviting(false);
   };
 
@@ -193,7 +177,7 @@ const BucketPage = () => {
       const { data, error } = await supabase.rpc('remove_bucket_member', { p_bucket_id: bucketDetails.id, p_user_id_to_remove: userIdToRemove });
       if (error) throw error;
       showSuccess(data);
-      fetchBucketData();
+      queryClient.invalidateQueries({ queryKey: ['bucketData', bucketName, currentPrefix] });
     } catch (err: any) {
       console.error(err);
       showError(err.message);
@@ -277,15 +261,15 @@ const BucketPage = () => {
     );
   };
 
-  if (loading) {
+  if (isLoading) {
     return <div className="container mx-auto p-4"><Skeleton className="h-10 w-40 mb-4" /><Skeleton className="h-96 w-full" /></div>;
   }
 
-  if (error) {
+  if (isError) {
     return (
       <div className="container mx-auto p-4">
         <Button asChild variant="outline" className="mb-4"><Link to="/"><ArrowLeft className="mr-2 h-4 w-4" /> Back to Buckets</Link></Button>
-        <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>
+        <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Error</AlertTitle><AlertDescription>{(error as Error).message}</AlertDescription></Alert>
       </div>
     );
   }
@@ -309,8 +293,8 @@ const BucketPage = () => {
                     <Label htmlFor="privacy-switch">Public</Label>
                   </div>
                 )}
-                <Button variant="outline" size="icon" onClick={handleRefresh} disabled={isRefreshing}>
-                  <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                <Button variant="outline" size="icon" onClick={handleRefresh} disabled={isFetching}>
+                  <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
