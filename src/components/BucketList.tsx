@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { s3Client } from "@/lib/s3Client";
+import { s3Client, connectionError } from "@/lib/s3Client";
 import { ListBucketsCommand } from "@aws-sdk/client-s3";
 import {
   Card,
@@ -22,10 +22,22 @@ const BucketList = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (connectionError) {
+      setError(connectionError);
+      setLoading(false);
+      return;
+    }
+
+    if (!s3Client) {
+      setError("S3 client could not be initialized.");
+      setLoading(false);
+      return;
+    }
+
     const fetchBuckets = async () => {
       try {
         const data = await s3Client.send(new ListBucketsCommand({}));
-        setBuckets(data.Buckets || []);
+        setBuckets(data.Buckets ||);
       } catch (err) {
         console.error(err);
         setError(
