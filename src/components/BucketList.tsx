@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { s3Client, connectionError } from "@/lib/s3Client";
-import { ListBucketsCommand } from "@aws-sdk/client-s3";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   Card,
   CardContent,
@@ -12,13 +13,16 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Server, Trash2, PlusCircle } from "lucide-react";
+import { Server, Trash2, PlusCircle, Globe, Lock } from "lucide-react";
 import { CreateBucketDialog } from "./CreateBucketDialog";
 import { DeleteBucketDialog } from "./DeleteBucketDialog";
+import { Badge } from "./ui/badge";
 
 interface Bucket {
-  Name?: string;
-  CreationDate?: Date;
+  id: string;
+  name: string;
+  owner_id: string;
+  is_public: boolean;
 }
 
 const BucketList = () => {
@@ -27,6 +31,7 @@ const BucketList = () => {
   const [error, setError] = useState<string | null>(null);
   const [isCreateDialogOpen, setCreateDialogOpen] = useState(false);
   const [bucketToDelete, setBucketToDelete] = useState<Bucket | null>(null);
+  const { session } = useAuth();
 
   const fetchBuckets = useCallback(async () => {
     setLoading(true);
@@ -35,7 +40,6 @@ const BucketList = () => {
       setLoading(false);
       return;
     }
-
     if (!s3Client) {
       setError("S3 client could not be initialized.");
       setLoading(false);
@@ -43,10 +47,12 @@ const BucketList = () => {
     }
 
     try {
-      const data = await s3Client.send(new ListBucketsCommand({}));
-      setBuckets(data.Buckets || []);
+      const { data, error: supabaseError } = await supabase.from("buckets").select("*");
+      if (supabaseError) throw supabaseError;
+
+      setBuckets(data || []);
       setError(null);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
       setError(
         "Failed to fetch buckets. Please check your credentials and that your MinIO server is accessible (you may need to configure its CORS policy)."
@@ -96,19 +102,32 @@ const BucketList = () => {
               {buckets.length > 0 ? (
                 buckets.map((bucket) => (
                   <li
-                    key={bucket.Name}
+                    key={bucket.id}
                     className="flex items-center justify-between rounded-md border p-3 text-sm"
                   >
-                    <Link to={`/bucket/${bucket.Name}`} className="font-medium hover:underline">
-                      {bucket.Name}
-                    </Link>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setBucketToDelete(bucket)}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
+                    <div className="flex items-center gap-3">
+                      <Link to={`/bucket/${bucket.name}`} className="font-medium hover:underline">
+                        {bucket.name}
+                      </Link>
+                      {bucket.is_public ? (
+                        <Badge variant="outline" className="flex items-center gap-1">
+                          <Globe className="h-3 w-3" /> Public
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="flex items-center gap-1">
+                           <Lock className="h-3 w-3" /> Private
+                        </Badge>
+                      )}
+                    </div>
+                    {session?.user.id === bucket.owner_id && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setBucketToDelete(bucket)}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    )}
                   </li>
                 ))
               ) : (
@@ -123,12 +142,14 @@ const BucketList = () => {
         onOpenChange={setCreateDialogOpen}
         onBucketCreated={fetchBuckets}
       />
-      <DeleteBucketDialog
-        bucketName={bucketToDelete?.Name}
-        open={!!bucketToDelete}
-        onOpenChange={() => setBucketToDelete(null)}
-        onBucketDeleted={fetchBuckets}
-      />
+      {bucketToDelete && (
+        <DeleteBucketDialog
+          bucket={bucketToDelete}
+          open={!!bucketToDelete}
+          onOpenChange={() => setBucketToDelete(null)}
+          onBucketDeleted={fetchBuckets}
+        />
+      )}
     </>
   );
 };

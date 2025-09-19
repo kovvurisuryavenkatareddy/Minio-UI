@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { s3Client } from "@/lib/s3Client";
 import { DeleteBucketCommand } from "@aws-sdk/client-s3";
+import { supabase } from "@/integrations/supabase/client";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,30 +15,41 @@ import {
 import { Button } from "./ui/button";
 import { showSuccess, showError } from "@/utils/toast";
 
+interface Bucket {
+  id: string;
+  name: string;
+}
+
 interface DeleteBucketDialogProps {
-  bucketName: string | undefined;
+  bucket: Bucket | undefined;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onBucketDeleted: () => void;
 }
 
-export const DeleteBucketDialog = ({ bucketName, open, onOpenChange, onBucketDeleted }: DeleteBucketDialogProps) => {
+export const DeleteBucketDialog = ({ bucket, open, onOpenChange, onBucketDeleted }: DeleteBucketDialogProps) => {
   const [isDeleting, setIsDeleting] = useState(false);
 
   const handleDelete = async () => {
-    if (!bucketName || !s3Client) {
-        showError("S3 client not initialized or bucket name is missing.");
+    if (!bucket || !s3Client) {
+        showError("S3 client not initialized or bucket is missing.");
         return;
     }
     setIsDeleting(true);
     try {
-      await s3Client.send(new DeleteBucketCommand({ Bucket: bucketName }));
-      showSuccess(`Bucket "${bucketName}" deleted successfully.`);
+      // 1. Delete from MinIO
+      await s3Client.send(new DeleteBucketCommand({ Bucket: bucket.name }));
+
+      // 2. Delete from Supabase
+      const { error: supabaseError } = await supabase.from("buckets").delete().eq("id", bucket.id);
+      if (supabaseError) throw supabaseError;
+
+      showSuccess(`Bucket "${bucket.name}" deleted successfully.`);
       onBucketDeleted();
       onOpenChange(false);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      showError("Failed to delete bucket. It might not be empty.");
+      showError(err.message || "Failed to delete bucket. It might not be empty.");
     } finally {
       setIsDeleting(false);
     }
@@ -49,7 +61,7 @@ export const DeleteBucketDialog = ({ bucketName, open, onOpenChange, onBucketDel
         <AlertDialogHeader>
           <AlertDialogTitle>Are you sure?</AlertDialogTitle>
           <AlertDialogDescription>
-            This action cannot be undone. This will permanently delete the <strong>{bucketName}</strong> bucket.
+            This action cannot be undone. This will permanently delete the <strong>{bucket?.name}</strong> bucket.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
