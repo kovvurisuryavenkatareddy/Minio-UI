@@ -1,15 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { Link } from "react-router-dom";
 import { s3Client, connectionError } from "@/lib/s3Client";
 import { ListBucketsCommand } from "@aws-sdk/client-s3";
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Server } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Server, Trash2, PlusCircle } from "lucide-react";
+import { CreateBucketDialog } from "./CreateBucketDialog";
+import { DeleteBucketDialog } from "./DeleteBucketDialog";
 
 interface Bucket {
   Name?: string;
@@ -20,8 +25,11 @@ const BucketList = () => {
   const [buckets, setBuckets] = useState<Bucket[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isCreateDialogOpen, setCreateDialogOpen] = useState(false);
+  const [bucketToDelete, setBucketToDelete] = useState<Bucket | null>(null);
 
-  useEffect(() => {
+  const fetchBuckets = useCallback(async () => {
+    setLoading(true);
     if (connectionError) {
       setError(connectionError);
       setLoading(false);
@@ -34,63 +42,94 @@ const BucketList = () => {
       return;
     }
 
-    const fetchBuckets = async () => {
-      try {
-        const data = await s3Client.send(new ListBucketsCommand({}));
-        setBuckets(data.Buckets || []);
-      } catch (err) {
-        console.error(err);
-        setError(
-          "Failed to fetch buckets. Please check your credentials and that your MinIO server is accessible (you may need to configure its CORS policy)."
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchBuckets();
+    try {
+      const data = await s3Client.send(new ListBucketsCommand({}));
+      setBuckets(data.Buckets || []);
+      setError(null);
+    } catch (err) {
+      console.error(err);
+      setError(
+        "Failed to fetch buckets. Please check your credentials and that your MinIO server is accessible (you may need to configure its CORS policy)."
+      );
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
+  useEffect(() => {
+    fetchBuckets();
+  }, [fetchBuckets]);
+
   return (
-    <Card className="w-full">
-      <CardHeader>
-        <CardTitle className="flex items-center">
-          <Server className="mr-2 h-5 w-5" />
-          MinIO Buckets
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        {loading && (
-          <div className="space-y-2">
-            <Skeleton className="h-8 w-full" />
-            <Skeleton className="h-8 w-full" />
-            <Skeleton className="h-8 w-2/3" />
+    <>
+      <Card className="w-full">
+        <CardHeader>
+          <div className="flex justify-between items-center">
+            <div>
+              <CardTitle className="flex items-center">
+                <Server className="mr-2 h-5 w-5" />
+                MinIO Buckets
+              </CardTitle>
+              <CardDescription>Click on a bucket to view its contents.</CardDescription>
+            </div>
+            <Button onClick={() => setCreateDialogOpen(true)}>
+              <PlusCircle className="mr-2 h-4 w-4" /> Create Bucket
+            </Button>
           </div>
-        )}
-        {error && (
-          <Alert variant="destructive">
-            <AlertTitle>Error</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-        {!loading && !error && (
-          <ul className="space-y-2">
-            {buckets.length > 0 ? (
-              buckets.map((bucket) => (
-                <li
-                  key={bucket.Name}
-                  className="rounded-md border p-3 text-sm"
-                >
-                  {bucket.Name}
-                </li>
-              ))
-            ) : (
-              <p className="text-sm text-muted-foreground">No buckets found.</p>
-            )}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
+        </CardHeader>
+        <CardContent>
+          {loading && (
+            <div className="space-y-2">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-2/3" />
+            </div>
+          )}
+          {error && (
+            <Alert variant="destructive">
+              <AlertTitle>Error</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          {!loading && !error && (
+            <ul className="space-y-2">
+              {buckets.length > 0 ? (
+                buckets.map((bucket) => (
+                  <li
+                    key={bucket.Name}
+                    className="flex items-center justify-between rounded-md border p-3 text-sm"
+                  >
+                    <Link to={`/bucket/${bucket.Name}`} className="font-medium hover:underline">
+                      {bucket.Name}
+                    </Link>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setBucketToDelete(bucket)}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </li>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">No buckets found. Why not create one?</p>
+              )}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+      <CreateBucketDialog
+        open={isCreateDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        onBucketCreated={fetchBuckets}
+      />
+      <DeleteBucketDialog
+        bucketName={bucketToDelete?.Name}
+        open={!!bucketToDelete}
+        onOpenChange={() => setBucketToDelete(null)}
+        onBucketDeleted={fetchBuckets}
+      />
+    </>
   );
 };
 
