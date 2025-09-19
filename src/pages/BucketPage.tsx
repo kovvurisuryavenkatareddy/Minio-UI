@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { s3Client } from "@/lib/s3Client";
 import { supabase } from "@/integrations/supabase/client";
@@ -73,11 +73,14 @@ interface PreviewState {
 }
 
 const BucketPage = () => {
-  const { bucketName } = useParams<{ bucketName: string }>();
+  const params = useParams();
+  const navigate = useNavigate();
   const { session } = useAuth();
   const queryClient = useQueryClient();
 
-  const [currentPrefix, setCurrentPrefix] = useState("");
+  const bucketName = params.bucketName!;
+  const currentPrefix = params['*'] || "";
+
   const [inviteEmails, setInviteEmails] = useState("");
   const [isInviting, setIsInviting] = useState(false);
   const [isCreateFolderOpen, setCreateFolderOpen] = useState(false);
@@ -127,10 +130,11 @@ const BucketPage = () => {
 
   const handleRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ['bucketData', bucketName, currentPrefix] });
+    queryClient.invalidateQueries({ queryKey: ['sidebarTree', bucketName] });
   };
 
-  const handleFolderCreated = (newFolderPrefix: string) => {
-    setCurrentPrefix(newFolderPrefix);
+  const handleFolderCreated = (newFolderKey: string) => {
+    navigate(`/bucket/${bucketName}/${newFolderKey}`);
   };
 
   const handlePrivacyChange = async (isPublic: boolean) => {
@@ -235,12 +239,12 @@ const BucketPage = () => {
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
-            <BreadcrumbLink href="#" onClick={() => setCurrentPrefix("")}>
+            <BreadcrumbLink className="cursor-pointer" onClick={() => navigate(`/bucket/${bucketName}`)}>
               {bucketName}
             </BreadcrumbLink>
           </BreadcrumbItem>
           {parts.map((part, index) => {
-            const path = parts.slice(0, index + 1).join('/') + '/';
+            const path = parts.slice(0, index + 1).join('/');
             return (
               <React.Fragment key={path}>
                 <BreadcrumbSeparator />
@@ -248,7 +252,7 @@ const BucketPage = () => {
                   {index === parts.length - 1 ? (
                     <BreadcrumbPage>{part}</BreadcrumbPage>
                   ) : (
-                    <BreadcrumbLink href="#" onClick={() => setCurrentPrefix(path)}>
+                    <BreadcrumbLink className="cursor-pointer" onClick={() => navigate(`/bucket/${bucketName}/${path}/`)}>
                       {part}
                     </BreadcrumbLink>
                   )}
@@ -317,14 +321,18 @@ const BucketPage = () => {
                 items.map((item) => {
                   const name = item.type === 'folder' ? item.Prefix?.replace(currentPrefix, '').replace('/', '') : item.Key?.replace(currentPrefix, '');
                   return (
-                    <TableRow key={item.type === 'folder' ? item.Prefix : item.Key}>
+                    <TableRow 
+                      key={item.type === 'folder' ? item.Prefix : item.Key}
+                      onDoubleClick={() => {
+                        if (item.type === 'folder' && item.Prefix) {
+                          navigate(`/bucket/${bucketName}/${item.Prefix}`);
+                        }
+                      }}
+                      className={item.type === 'folder' ? 'cursor-pointer hover:bg-muted/50' : ''}
+                    >
                       <TableCell className="font-medium flex items-center">
                         {item.type === 'folder' ? <Folder className="mr-2 h-4 w-4 text-blue-500" /> : <File className="mr-2 h-4 w-4 text-muted-foreground" />}
-                        {item.type === 'folder' ? (
-                          <a href="#" className="cursor-pointer hover:underline" onClick={(e) => { e.preventDefault(); if (item.Prefix) { setCurrentPrefix(item.Prefix); } }}>{name}</a>
-                        ) : (
-                          <span>{name}</span>
-                        )}
+                        <span>{name}</span>
                       </TableCell>
                       <TableCell>{item.type === 'file' ? formatBytes(item.Size) : '-'}</TableCell>
                       <TableCell>{item.type === 'file' ? item.LastModified?.toLocaleString() : '-'}</TableCell>

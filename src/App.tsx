@@ -32,7 +32,7 @@ const App = () => (
             <Route element={<ProtectedRoute />}>
               <Route element={<AppLayout />}>
                 <Route path="/" element={<Index />} />
-                <Route path="/bucket/:bucketName" element={<BucketPage />} />
+                <Route path="/bucket/:bucketName/*" element={<BucketPage />} />
               </Route>
             </Route>
 
