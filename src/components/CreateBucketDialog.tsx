@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { s3Client } from "@/lib/s3Client";
-import { CreateBucketCommand } from "@aws-sdk/client-s3";
+import { CreateBucketCommand, PutBucketVersioningCommand } from "@aws-sdk/client-s3";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -65,7 +65,15 @@ export const CreateBucketDialog = ({ open, onOpenChange, onBucketCreated }: Crea
       // 1. Create the bucket in MinIO
       await s3Client.send(new CreateBucketCommand({ Bucket: values.bucketName }));
 
-      // 2. Create the bucket record in Supabase
+      // 2. Enable versioning on the new bucket
+      await s3Client.send(new PutBucketVersioningCommand({
+        Bucket: values.bucketName,
+        VersioningConfiguration: {
+          Status: "Enabled",
+        },
+      }));
+
+      // 3. Create the bucket record in Supabase
       const { error: supabaseError } = await supabase.from("buckets").insert({
         name: values.bucketName,
         owner_id: session.user.id,
@@ -73,12 +81,10 @@ export const CreateBucketDialog = ({ open, onOpenChange, onBucketCreated }: Crea
       });
 
       if (supabaseError) {
-        // If Supabase insert fails, we should ideally delete the MinIO bucket.
-        // For now, we'll just show an error.
         throw new Error(`Failed to save bucket metadata: ${supabaseError.message}`);
       }
 
-      showSuccess(`Bucket "${values.bucketName}" created successfully.`);
+      showSuccess(`Bucket "${values.bucketName}" created successfully with versioning enabled.`);
       onBucketCreated();
       onOpenChange(false);
       form.reset();
@@ -96,7 +102,7 @@ export const CreateBucketDialog = ({ open, onOpenChange, onBucketCreated }: Crea
         <DialogHeader>
           <DialogTitle>Create New Bucket</DialogTitle>
           <DialogDescription>
-            Enter a unique name for your new bucket.
+            Enter a unique name for your new bucket. Versioning will be enabled by default.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>

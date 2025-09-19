@@ -43,13 +43,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Folder, File, AlertTriangle, Users, Trash2, Send, MoreVertical, FolderPlus, Eye, Download, FolderUp } from "lucide-react";
+import { ArrowLeft, Folder, File, AlertTriangle, Users, Trash2, Send, MoreVertical, FolderPlus, Eye, Download, FolderUp, RefreshCw, History } from "lucide-react";
 import { showSuccess, showError, showLoading, dismissToast } from "@/utils/toast";
 import { CreateFolderDialog } from "@/components/CreateFolderDialog";
 import { UploadFileDialog } from "@/components/UploadFileDialog";
 import { DeleteObjectDialog } from "@/components/DeleteObjectDialog";
 import { PreviewFileDialog } from "@/components/PreviewFileDialog";
 import { UploadFolderDialog } from "@/components/UploadFolderDialog";
+import { VersionHistoryDialog } from "@/components/VersionHistoryDialog";
 
 interface BucketDetails {
   id: string;
@@ -79,6 +80,7 @@ const BucketPage = () => {
   const [members, setMembers] = useState<BucketMember[]>([]);
   const [currentPrefix, setCurrentPrefix] = useState("");
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [inviteEmails, setInviteEmails] = useState("");
   const [isInviting, setIsInviting] = useState(false);
@@ -87,6 +89,7 @@ const BucketPage = () => {
   const [isUploadFolderOpen, setUploadFolderOpen] = useState(false);
   const [objectToDelete, setObjectToDelete] = useState<string | null>(null);
   const [previewState, setPreviewState] = useState<PreviewState | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<string | null>(null);
 
   const fetchBucketData = useCallback(async () => {
     if (!bucketName || !session) return;
@@ -97,7 +100,10 @@ const BucketPage = () => {
     }
 
     try {
-      setLoading(true);
+      // Don't show main loader on refresh
+      if (!isRefreshing) {
+        setLoading(true);
+      }
       const { data: bucketData, error: supabaseError } = await supabase
         .from("buckets")
         .select("id, owner_id, is_public")
@@ -127,11 +133,17 @@ const BucketPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [bucketName, session, currentPrefix]);
+  }, [bucketName, session, currentPrefix, isRefreshing]);
 
   useEffect(() => {
     fetchBucketData();
   }, [fetchBucketData]);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await fetchBucketData();
+    setIsRefreshing(false);
+  };
 
   const handlePrivacyChange = async (isPublic: boolean) => {
     if (!bucketDetails) return;
@@ -211,7 +223,6 @@ const BucketPage = () => {
   const handlePreview = async (key: string) => {
     const url = await getPresignedUrl(key);
     if (url) {
-      // A simple way to guess content type for preview
       const extension = key.split('.').pop()?.toLowerCase() || '';
       const imageTypes = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
       const fileType = imageTypes.includes(extension) ? `image/${extension}` : 'application/octet-stream';
@@ -294,6 +305,9 @@ const BucketPage = () => {
                     <Label htmlFor="privacy-switch">Public</Label>
                   </div>
                 )}
+                <Button variant="outline" size="icon" onClick={handleRefresh} disabled={isRefreshing}>
+                  <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button>Actions</Button>
@@ -326,18 +340,7 @@ const BucketPage = () => {
                         <TableCell className="font-medium flex items-center">
                           {item.type === 'folder' ? <Folder className="mr-2 h-4 w-4 text-blue-500" /> : <File className="mr-2 h-4 w-4 text-muted-foreground" />}
                           {item.type === 'folder' ? (
-                            <a
-                              href="#"
-                              className="cursor-pointer hover:underline"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                if (item.Prefix) {
-                                  setCurrentPrefix(item.Prefix);
-                                }
-                              }}
-                            >
-                              {name}
-                            </a>
+                            <a href="#" className="cursor-pointer hover:underline" onClick={(e) => { e.preventDefault(); if (item.Prefix) { setCurrentPrefix(item.Prefix); } }}>{name}</a>
                           ) : (
                             <span>{name}</span>
                           )}
@@ -351,6 +354,7 @@ const BucketPage = () => {
                               <DropdownMenuContent>
                                 <DropdownMenuItem onClick={() => handlePreview(item.Key!)}><Eye className="mr-2 h-4 w-4" /> Preview</DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleDownload(item.Key!)}><Download className="mr-2 h-4 w-4" /> Download</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => setHistoryTarget(item.Key!)}><History className="mr-2 h-4 w-4" /> Version History</DropdownMenuItem>
                                 <DropdownMenuItem className="text-destructive" onClick={() => setObjectToDelete(item.Key!)}><Trash2 className="mr-2 h-4 w-4" /> Delete</DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
@@ -395,6 +399,7 @@ const BucketPage = () => {
       {bucketName && <UploadFolderDialog open={isUploadFolderOpen} onOpenChange={setUploadFolderOpen} onUploadComplete={fetchBucketData} bucketName={bucketName} currentPrefix={currentPrefix} />}
       {bucketName && objectToDelete && <DeleteObjectDialog open={!!objectToDelete} onOpenChange={() => setObjectToDelete(null)} onObjectDeleted={fetchBucketData} bucketName={bucketName} objectKey={objectToDelete} />}
       {previewState && <PreviewFileDialog {...previewState} open={!!previewState} onOpenChange={() => setPreviewState(null)} />}
+      {bucketName && historyTarget && <VersionHistoryDialog open={!!historyTarget} onOpenChange={() => setHistoryTarget(null)} onVersionRestored={handleRefresh} bucketName={bucketName} objectKey={historyTarget} />}
     </div>
   );
 };
