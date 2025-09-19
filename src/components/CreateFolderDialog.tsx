@@ -31,7 +31,7 @@ const formSchema = z.object({
 interface CreateFolderDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onFolderCreated: () => void;
+  onFolderCreated: (folderKey: string) => void;
   bucketName: string;
   currentPrefix: string;
 }
@@ -62,7 +62,7 @@ export const CreateFolderDialog = ({ open, onOpenChange, onFolderCreated, bucket
       }));
 
       showSuccess(`Folder "${values.folderName}" created successfully.`);
-      onFolderCreated();
+      onFolderCreated(folderKey);
       onOpenChange(false);
       form.reset();
     } catch (err: any) {

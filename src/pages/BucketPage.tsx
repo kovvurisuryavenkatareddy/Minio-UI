@@ -145,6 +145,10 @@ const BucketPage = () => {
     setIsRefreshing(false);
   };
 
+  const handleFolderCreated = (newFolderPrefix: string) => {
+    setCurrentPrefix(newFolderPrefix);
+  };
+
   const handlePrivacyChange = async (isPublic: boolean) => {
     if (!bucketDetails) return;
     try {
@@ -394,10 +398,10 @@ const BucketPage = () => {
         </Card>
       )}
 
-      {bucketName && <CreateFolderDialog open={isCreateFolderOpen} onOpenChange={setCreateFolderOpen} onFolderCreated={fetchBucketData} bucketName={bucketName} currentPrefix={currentPrefix} />}
-      {bucketName && <UploadFileDialog open={isUploadFileOpen} onOpenChange={setUploadFileOpen} onUploadComplete={fetchBucketData} bucketName={bucketName} currentPrefix={currentPrefix} />}
-      {bucketName && <UploadFolderDialog open={isUploadFolderOpen} onOpenChange={setUploadFolderOpen} onUploadComplete={fetchBucketData} bucketName={bucketName} currentPrefix={currentPrefix} />}
-      {bucketName && objectToDelete && <DeleteObjectDialog open={!!objectToDelete} onOpenChange={() => setObjectToDelete(null)} onObjectDeleted={fetchBucketData} bucketName={bucketName} objectKey={objectToDelete} />}
+      {bucketName && <CreateFolderDialog open={isCreateFolderOpen} onOpenChange={setCreateFolderOpen} onFolderCreated={handleFolderCreated} bucketName={bucketName} currentPrefix={currentPrefix} />}
+      {bucketName && <UploadFileDialog open={isUploadFileOpen} onOpenChange={setUploadFileOpen} onUploadComplete={handleRefresh} bucketName={bucketName} currentPrefix={currentPrefix} />}
+      {bucketName && <UploadFolderDialog open={isUploadFolderOpen} onOpenChange={setUploadFolderOpen} onUploadComplete={handleRefresh} bucketName={bucketName} currentPrefix={currentPrefix} />}
+      {bucketName && objectToDelete && <DeleteObjectDialog open={!!objectToDelete} onOpenChange={() => setObjectToDelete(null)} onObjectDeleted={handleRefresh} bucketName={bucketName} objectKey={objectToDelete} />}
       {previewState && <PreviewFileDialog {...previewState} open={!!previewState} onOpenChange={() => setPreviewState(null)} />}
       {bucketName && historyTarget && <VersionHistoryDialog open={!!historyTarget} onOpenChange={() => setHistoryTarget(null)} onVersionRestored={handleRefresh} bucketName={bucketName} objectKey={historyTarget} />}
     </div>
