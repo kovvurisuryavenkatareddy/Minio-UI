@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { s3Client } from "@/lib/s3Client";
 import { supabase } from "@/integrations/supabase/client";
@@ -323,9 +323,24 @@ const BucketPage = () => {
                     const name = item.type === 'folder' ? item.Prefix?.replace(currentPrefix, '').replace('/', '') : item.Key?.replace(currentPrefix, '');
                     return (
                       <TableRow key={item.type === 'folder' ? item.Prefix : item.Key}>
-                        <TableCell className="font-medium flex items-center cursor-pointer hover:underline" onClick={() => item.type === 'folder' && item.Prefix && setCurrentPrefix(item.Prefix)}>
+                        <TableCell className="font-medium flex items-center">
                           {item.type === 'folder' ? <Folder className="mr-2 h-4 w-4 text-blue-500" /> : <File className="mr-2 h-4 w-4 text-muted-foreground" />}
-                          {name}
+                          {item.type === 'folder' ? (
+                            <a
+                              href="#"
+                              className="cursor-pointer hover:underline"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                if (item.Prefix) {
+                                  setCurrentPrefix(item.Prefix);
+                                }
+                              }}
+                            >
+                              {name}
+                            </a>
+                          ) : (
+                            <span>{name}</span>
+                          )}
                         </TableCell>
                         <TableCell>{item.type === 'file' ? formatBytes(item.Size) : '-'}</TableCell>
                         <TableCell>{item.type === 'file' ? item.LastModified?.toLocaleString() : '-'}</TableCell>
