@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { s3Client } from "@/lib/s3Client";
 import { supabase } from "@/integrations/supabase/client";
@@ -8,6 +8,7 @@ import {
   Card,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -22,9 +23,11 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Folder, File, AlertTriangle } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { ArrowLeft, Folder, File, AlertTriangle, Users, Trash2, Send } from "lucide-react";
 import { showSuccess, showError } from "@/utils/toast";
 
 interface BucketDetails {
@@ -33,51 +36,67 @@ interface BucketDetails {
   is_public: boolean;
 }
 
+interface BucketMember {
+  user_id: string;
+  email: string;
+  is_owner: boolean;
+}
+
 const BucketPage = () => {
   const { bucketName } = useParams<{ bucketName: string }>();
   const { session } = useAuth();
   const [bucketDetails, setBucketDetails] = useState<BucketDetails | null>(null);
   const [objects, setObjects] = useState<_Object[]>([]);
+  const [members, setMembers] = useState<BucketMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [isInviting, setIsInviting] = useState(false);
 
-  useEffect(() => {
+  const fetchBucketData = useCallback(async () => {
     if (!bucketName || !session) return;
     if (!s3Client) {
-        setError("S3 client is not initialized.");
-        setLoading(false);
-        return;
+      setError("S3 client is not initialized.");
+      setLoading(false);
+      return;
     }
 
-    const fetchBucketData = async () => {
-      try {
-        // 1. Fetch bucket metadata and check permissions from Supabase
-        const { data: bucketData, error: supabaseError } = await supabase
-          .from("buckets")
-          .select("id, owner_id, is_public")
-          .eq("name", bucketName)
-          .single();
+    try {
+      setLoading(true);
+      // 1. Fetch bucket metadata and check permissions from Supabase
+      const { data: bucketData, error: supabaseError } = await supabase
+        .from("buckets")
+        .select("id, owner_id, is_public")
+        .eq("name", bucketName)
+        .single();
 
-        if (supabaseError || !bucketData) {
-          throw new Error("Bucket not found or you don't have permission to view it.");
-        }
-        setBucketDetails(bucketData);
-
-        // 2. Fetch objects from MinIO
-        const s3Data = await s3Client.send(
-          new ListObjectsV2Command({ Bucket: bucketName })
-        );
-        setObjects(s3Data.Contents || []);
-      } catch (err: any) {
-        console.error(err);
-        setError(err.message || "Failed to fetch bucket data.");
-      } finally {
-        setLoading(false);
+      if (supabaseError || !bucketData) {
+        throw new Error("Bucket not found or you don't have permission to view it.");
       }
-    };
+      setBucketDetails(bucketData);
 
-    fetchBucketData();
+      // 2. Fetch objects from MinIO
+      const s3Data = await s3Client.send(
+        new ListObjectsV2Command({ Bucket: bucketName })
+      );
+      setObjects(s3Data.Contents || []);
+
+      // 3. Fetch members if user has access
+      const { data: memberData, error: memberError } = await supabase.rpc('get_bucket_members', { p_bucket_id: bucketData.id });
+      if (memberError) throw new Error(`Failed to fetch members: ${memberError.message}`);
+      setMembers(memberData || []);
+
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Failed to fetch bucket data.");
+    } finally {
+      setLoading(false);
+    }
   }, [bucketName, session]);
+
+  useEffect(() => {
+    fetchBucketData();
+  }, [fetchBucketData]);
 
   const handlePrivacyChange = async (isPublic: boolean) => {
     if (!bucketDetails) return;
@@ -97,6 +116,43 @@ const BucketPage = () => {
     }
   };
 
+  const handleInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteEmail || !bucketDetails) return;
+    setIsInviting(true);
+    try {
+      const { data, error } = await supabase.rpc('invite_user_to_bucket', {
+        p_bucket_id: bucketDetails.id,
+        p_user_email: inviteEmail
+      });
+      if (error) throw error;
+      showSuccess(data);
+      setInviteEmail("");
+      fetchBucketData(); // Refresh member list
+    } catch (err: any) {
+      console.error(err);
+      showError(err.message);
+    } finally {
+      setIsInviting(false);
+    }
+  };
+
+  const handleRemoveMember = async (userIdToRemove: string) => {
+    if (!bucketDetails) return;
+    try {
+      const { data, error } = await supabase.rpc('remove_bucket_member', {
+        p_bucket_id: bucketDetails.id,
+        p_user_id_to_remove: userIdToRemove
+      });
+      if (error) throw error;
+      showSuccess(data);
+      fetchBucketData(); // Refresh member list
+    } catch (err: any) {
+      console.error(err);
+      showError(err.message);
+    }
+  };
+
   const formatBytes = (bytes: number, decimals = 2) => {
     if (!bytes || bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -108,52 +164,64 @@ const BucketPage = () => {
 
   const isOwner = session?.user.id === bucketDetails?.owner_id;
 
+  if (loading) {
+    return (
+      <div className="container mx-auto p-4">
+        <Skeleton className="h-10 w-40 mb-4" />
+        <Skeleton className="h-96 w-full" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="container mx-auto p-4">
+        <Button asChild variant="outline" className="mb-4">
+          <Link to="/">
+            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Buckets
+          </Link>
+        </Button>
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
   return (
-    <div className="container mx-auto p-4">
-      <Button asChild variant="outline" className="mb-4">
-        <Link to="/">
-          <ArrowLeft className="mr-2 h-4 w-4" /> Back to Buckets
-        </Link>
-      </Button>
-      <Card>
-        <CardHeader>
-          <div className="flex justify-between items-start">
-            <div>
-              <CardTitle className="flex items-center">
-                <Folder className="mr-2 h-5 w-5" />
-                {bucketName}
-              </CardTitle>
-              <CardDescription>Objects in this bucket.</CardDescription>
-            </div>
-            {isOwner && bucketDetails && (
-              <div className="flex items-center space-x-2">
-                <Label htmlFor="privacy-switch">Private</Label>
-                <Switch
-                  id="privacy-switch"
-                  checked={bucketDetails.is_public}
-                  onCheckedChange={handlePrivacyChange}
-                />
-                <Label htmlFor="privacy-switch">Public</Label>
+    <div className="container mx-auto p-4 grid gap-6">
+      <div>
+        <Button asChild variant="outline" className="mb-4">
+          <Link to="/">
+            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Buckets
+          </Link>
+        </Button>
+        <Card>
+          <CardHeader>
+            <div className="flex justify-between items-start">
+              <div>
+                <CardTitle className="flex items-center">
+                  <Folder className="mr-2 h-5 w-5" />
+                  {bucketName}
+                </CardTitle>
+                <CardDescription>Objects in this bucket.</CardDescription>
               </div>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          {loading && (
-            <div className="space-y-2">
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-2/3" />
+              {isOwner && bucketDetails && (
+                <div className="flex items-center space-x-2">
+                  <Label htmlFor="privacy-switch">Private</Label>
+                  <Switch
+                    id="privacy-switch"
+                    checked={bucketDetails.is_public}
+                    onCheckedChange={handlePrivacyChange}
+                  />
+                  <Label htmlFor="privacy-switch">Public</Label>
+                </div>
+              )}
             </div>
-          )}
-          {error && (
-            <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>Error</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-          {!loading && !error && bucketDetails && (
+          </CardHeader>
+          <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -185,9 +253,53 @@ const BucketPage = () => {
                 )}
               </TableBody>
             </Table>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
+
+      {isOwner && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <Users className="mr-2 h-5 w-5" />
+              Manage Access
+            </CardTitle>
+            <CardDescription>Invite users to collaborate on this private bucket.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <ul className="space-y-2">
+              {members.map(member => (
+                <li key={member.user_id} className="flex items-center justify-between rounded-md border p-3 text-sm">
+                  <div className="flex items-center gap-3">
+                    <span className="font-medium">{member.email}</span>
+                    {member.is_owner && <Badge>Owner</Badge>}
+                  </div>
+                  {!member.is_owner && (
+                    <Button variant="ghost" size="icon" onClick={() => handleRemoveMember(member.user_id)}>
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+          <CardFooter>
+            <form onSubmit={handleInvite} className="flex w-full items-center space-x-2">
+              <Input
+                type="email"
+                placeholder="friend@example.com"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                required
+              />
+              <Button type="submit" disabled={isInviting}>
+                <Send className="mr-2 h-4 w-4" />
+                {isInviting ? 'Inviting...' : 'Invite'}
+              </Button>
+            </form>
+          </CardFooter>
+        </Card>
+      )}
     </div>
   );
 };
