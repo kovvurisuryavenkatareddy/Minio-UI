@@ -311,8 +311,9 @@ const BucketPage = () => {
                     {member.is_owner && <Badge>Owner</Badge>}
                   </div>
                   {!member.is_owner && (
-                    <Button variant="ghost" size="icon" onClick={() => handleRemoveMember(member.user_id)}>
-                      <Trash2 className="h-4 w-4 text-destructive" />
+                    <Button variant="destructive" size="sm" onClick={() => handleRemoveMember(member.user_id)}>
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Remove
                     </Button>
                   )}
                 </li>
