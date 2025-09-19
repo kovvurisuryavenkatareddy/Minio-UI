@@ -1,7 +1,7 @@
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { LogOut, User } from "lucide-react";
+import { LogOut, User, Menu } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
   DropdownMenu,
@@ -13,7 +13,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
-const Header = () => {
+interface HeaderProps {
+  onMenuClick: () => void;
+}
+
+const Header = ({ onMenuClick }: HeaderProps) => {
   const { session } = useAuth();
   const navigate = useNavigate();
 
@@ -27,7 +31,16 @@ const Header = () => {
 
   return (
     <header className="z-10 py-4 bg-white shadow-sm dark:bg-gray-800 border-b">
-      <div className="container flex items-center justify-end h-full px-6 mx-auto text-primary dark:text-gray-200">
+      <div className="container flex items-center justify-between h-full px-6 mx-auto text-primary dark:text-gray-200 md:justify-end">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="md:hidden"
+          onClick={onMenuClick}
+        >
+          <Menu className="h-6 w-6" />
+          <span className="sr-only">Open sidebar</span>
+        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="relative h-8 w-8 rounded-full">
