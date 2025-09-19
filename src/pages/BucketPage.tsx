@@ -23,12 +23,12 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Folder, File, AlertTriangle, Users, Trash2, Send } from "lucide-react";
-import { showSuccess, showError } from "@/utils/toast";
+import { showSuccess, showError, showLoading, dismissToast } from "@/utils/toast";
 
 interface BucketDetails {
   id: string;
@@ -50,7 +50,7 @@ const BucketPage = () => {
   const [members, setMembers] = useState<BucketMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteEmails, setInviteEmails] = useState("");
   const [isInviting, setIsInviting] = useState(false);
 
   const fetchBucketData = useCallback(async () => {
@@ -118,23 +118,59 @@ const BucketPage = () => {
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inviteEmail || !bucketDetails) return;
-    setIsInviting(true);
-    try {
-      const { data, error } = await supabase.rpc('invite_user_to_bucket', {
-        p_bucket_id: bucketDetails.id,
-        p_user_email: inviteEmail
-      });
-      if (error) throw error;
-      showSuccess(data);
-      setInviteEmail("");
-      fetchBucketData(); // Refresh member list
-    } catch (err: any) {
-      console.error(err);
-      showError(err.message);
-    } finally {
-      setIsInviting(false);
+    if (!inviteEmails || !bucketDetails) return;
+
+    const emails = inviteEmails
+      .split(/[\n,;]+/)
+      .map(email => email.trim())
+      .filter(email => email.length > 0 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+
+    if (emails.length === 0) {
+      showError("Please enter at least one valid email address.");
+      return;
     }
+
+    setIsInviting(true);
+    const loadingToast = showLoading(`Inviting ${emails.length} user(s)...`);
+
+    const results = {
+      success: [] as string[],
+      failed: [] as { email: string; message: string }[],
+    };
+
+    for (const email of emails) {
+      try {
+        const { data, error } = await supabase.rpc('invite_user_to_bucket', {
+          p_bucket_id: bucketDetails.id,
+          p_user_email: email,
+        });
+        if (error) throw error;
+        if (data.includes('already a member')) {
+          results.failed.push({ email, message: 'Already a member.' });
+        } else {
+          results.success.push(email);
+        }
+      } catch (err: any) {
+        results.failed.push({ email, message: err.message });
+      }
+    }
+
+    dismissToast(loadingToast);
+
+    if (results.success.length > 0) {
+      showSuccess(`${results.success.length} user(s) invited successfully.`);
+    }
+    if (results.failed.length > 0) {
+      showError(`${results.failed.length} invitation(s) failed. Check console for details.`);
+      console.error("Failed invitations:", results.failed);
+    }
+
+    if (results.success.length > 0) {
+      setInviteEmails("");
+      fetchBucketData(); // Refresh member list
+    }
+    
+    setIsInviting(false);
   };
 
   const handleRemoveMember = async (userIdToRemove: string) => {
@@ -284,12 +320,11 @@ const BucketPage = () => {
             </ul>
           </CardContent>
           <CardFooter>
-            <form onSubmit={handleInvite} className="flex w-full items-center space-x-2">
-              <Input
-                type="email"
-                placeholder="friend@example.com"
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
+            <form onSubmit={handleInvite} className="flex w-full items-start space-x-2">
+              <Textarea
+                placeholder="Enter emails separated by commas or new lines."
+                value={inviteEmails}
+                onChange={(e) => setInviteEmails(e.target.value)}
                 required
               />
               <Button type="submit" disabled={isInviting}>
