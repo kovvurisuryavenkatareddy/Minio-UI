@@ -37,7 +37,7 @@ const BucketList = () => {
     const fetchBuckets = async () => {
       try {
         const data = await s3Client.send(new ListBucketsCommand({}));
-        setBuckets(data.Buckets ||);
+        setBuckets(data.Buckets || []);
       } catch (err) {
         console.error(err);
         setError(
