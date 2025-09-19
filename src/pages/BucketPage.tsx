@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { s3Client } from "@/lib/s3Client";
 import { supabase } from "@/integrations/supabase/client";
@@ -43,7 +43,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Folder, File, AlertTriangle, Users, Trash2, Send, MoreVertical, FolderPlus, Eye, Download, FolderUp, RefreshCw, History } from "lucide-react";
+import { Folder, File, AlertTriangle, Users, Trash2, Send, MoreVertical, FolderPlus, Eye, Download, FolderUp, RefreshCw, History } from "lucide-react";
 import { showSuccess, showError, showLoading, dismissToast } from "@/utils/toast";
 import { CreateFolderDialog } from "@/components/CreateFolderDialog";
 import { UploadFileDialog } from "@/components/UploadFileDialog";
@@ -119,7 +119,7 @@ const BucketPage = () => {
   const { data, error, isLoading, isFetching, isError } = useQuery({
     queryKey: ['bucketData', bucketName, currentPrefix],
     queryFn: fetchBucketData,
-    refetchOnWindowFocus: false, // This is the fix
+    refetchOnWindowFocus: false,
     enabled: !!bucketName && !!session,
   });
 
@@ -232,7 +232,7 @@ const BucketPage = () => {
   const renderBreadcrumbs = () => {
     const parts = currentPrefix.split('/').filter(Boolean);
     return (
-      <Breadcrumb className="mb-4">
+      <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
             <BreadcrumbLink href="#" onClick={() => setCurrentPrefix("")}>
@@ -262,103 +262,95 @@ const BucketPage = () => {
   };
 
   if (isLoading) {
-    return <div className="container mx-auto p-4"><Skeleton className="h-10 w-40 mb-4" /><Skeleton className="h-96 w-full" /></div>;
+    return <div className="space-y-4"><Skeleton className="h-8 w-1/2" /><Skeleton className="h-96 w-full" /></div>;
   }
 
   if (isError) {
     return (
-      <div className="container mx-auto p-4">
-        <Button asChild variant="outline" className="mb-4"><Link to="/"><ArrowLeft className="mr-2 h-4 w-4" /> Back to Buckets</Link></Button>
-        <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Error</AlertTitle><AlertDescription>{(error as Error).message}</AlertDescription></Alert>
-      </div>
+      <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Error</AlertTitle><AlertDescription>{(error as Error).message}</AlertDescription></Alert>
     );
   }
 
   return (
-    <div className="container mx-auto p-4 grid gap-6">
-      <div>
-        <Button asChild variant="outline" className="mb-4"><Link to="/"><ArrowLeft className="mr-2 h-4 w-4" /> Back to Buckets</Link></Button>
-        <Card>
-          <CardHeader>
-            <div className="flex justify-between items-start">
-              <div>
-                <CardTitle className="flex items-center"><Folder className="mr-2 h-5 w-5" />{bucketName}</CardTitle>
-                <CardDescription>Objects in this bucket.</CardDescription>
-              </div>
-              <div className="flex items-center space-x-2">
-                {isOwner && bucketDetails && (
-                  <div className="flex items-center space-x-2 mr-4">
-                    <Label htmlFor="privacy-switch">Private</Label>
-                    <Switch id="privacy-switch" checked={bucketDetails.is_public} onCheckedChange={handlePrivacyChange} />
-                    <Label htmlFor="privacy-switch">Public</Label>
-                  </div>
-                )}
-                <Button variant="outline" size="icon" onClick={handleRefresh} disabled={isFetching}>
-                  <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-                </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button>Actions</Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent>
-                    <DropdownMenuItem onClick={() => setUploadFileOpen(true)}>
-                      <File className="mr-2 h-4 w-4" /> Upload Files
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setUploadFolderOpen(true)}>
-                      <FolderUp className="mr-2 h-4 w-4" /> Upload Folder
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setCreateFolderOpen(true)}>
-                      <FolderPlus className="mr-2 h-4 w-4" /> Create Folder
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
+    <div className="grid gap-6">
+      <Card>
+        <CardHeader>
+          <div className="flex justify-between items-start">
+            <div>
+              {renderBreadcrumbs()}
             </div>
-          </CardHeader>
-          <CardContent>
-            {renderBreadcrumbs()}
-            <Table>
-              <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Size</TableHead><TableHead>Last Modified</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
-              <TableBody>
-                {items.length > 0 ? (
-                  items.map((item) => {
-                    const name = item.type === 'folder' ? item.Prefix?.replace(currentPrefix, '').replace('/', '') : item.Key?.replace(currentPrefix, '');
-                    return (
-                      <TableRow key={item.type === 'folder' ? item.Prefix : item.Key}>
-                        <TableCell className="font-medium flex items-center">
-                          {item.type === 'folder' ? <Folder className="mr-2 h-4 w-4 text-blue-500" /> : <File className="mr-2 h-4 w-4 text-muted-foreground" />}
-                          {item.type === 'folder' ? (
-                            <a href="#" className="cursor-pointer hover:underline" onClick={(e) => { e.preventDefault(); if (item.Prefix) { setCurrentPrefix(item.Prefix); } }}>{name}</a>
-                          ) : (
-                            <span>{name}</span>
-                          )}
-                        </TableCell>
-                        <TableCell>{item.type === 'file' ? formatBytes(item.Size) : '-'}</TableCell>
-                        <TableCell>{item.type === 'file' ? item.LastModified?.toLocaleString() : '-'}</TableCell>
-                        <TableCell className="text-right">
-                          {item.type === 'file' && item.Key && (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4" /></Button></DropdownMenuTrigger>
-                              <DropdownMenuContent>
-                                <DropdownMenuItem onClick={() => handlePreview(item.Key!)}><Eye className="mr-2 h-4 w-4" /> Preview</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleDownload(item.Key!)}><Download className="mr-2 h-4 w-4" /> Download</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => setHistoryTarget(item.Key!)}><History className="mr-2 h-4 w-4" /> Version History</DropdownMenuItem>
-                                <DropdownMenuItem className="text-destructive" onClick={() => setObjectToDelete(item.Key!)}><Trash2 className="mr-2 h-4 w-4" /> Delete</DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                ) : (
-                  <TableRow><TableCell colSpan={4} className="text-center">This folder is empty.</TableCell></TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      </div>
+            <div className="flex items-center space-x-2">
+              {isOwner && bucketDetails && (
+                <div className="flex items-center space-x-2 mr-4">
+                  <Label htmlFor="privacy-switch">Private</Label>
+                  <Switch id="privacy-switch" checked={bucketDetails.is_public} onCheckedChange={handlePrivacyChange} />
+                  <Label htmlFor="privacy-switch">Public</Label>
+                </div>
+              )}
+              <Button variant="outline" size="icon" onClick={handleRefresh} disabled={isFetching}>
+                <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button>Actions</Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuItem onClick={() => setUploadFileOpen(true)}>
+                    <File className="mr-2 h-4 w-4" /> Upload Files
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setUploadFolderOpen(true)}>
+                    <FolderUp className="mr-2 h-4 w-4" /> Upload Folder
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setCreateFolderOpen(true)}>
+                    <FolderPlus className="mr-2 h-4 w-4" /> Create Folder
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Size</TableHead><TableHead>Last Modified</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+            <TableBody>
+              {items.length > 0 ? (
+                items.map((item) => {
+                  const name = item.type === 'folder' ? item.Prefix?.replace(currentPrefix, '').replace('/', '') : item.Key?.replace(currentPrefix, '');
+                  return (
+                    <TableRow key={item.type === 'folder' ? item.Prefix : item.Key}>
+                      <TableCell className="font-medium flex items-center">
+                        {item.type === 'folder' ? <Folder className="mr-2 h-4 w-4 text-blue-500" /> : <File className="mr-2 h-4 w-4 text-muted-foreground" />}
+                        {item.type === 'folder' ? (
+                          <a href="#" className="cursor-pointer hover:underline" onClick={(e) => { e.preventDefault(); if (item.Prefix) { setCurrentPrefix(item.Prefix); } }}>{name}</a>
+                        ) : (
+                          <span>{name}</span>
+                        )}
+                      </TableCell>
+                      <TableCell>{item.type === 'file' ? formatBytes(item.Size) : '-'}</TableCell>
+                      <TableCell>{item.type === 'file' ? item.LastModified?.toLocaleString() : '-'}</TableCell>
+                      <TableCell className="text-right">
+                        {item.type === 'file' && item.Key && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                            <DropdownMenuContent>
+                              <DropdownMenuItem onClick={() => handlePreview(item.Key!)}><Eye className="mr-2 h-4 w-4" /> Preview</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleDownload(item.Key!)}><Download className="mr-2 h-4 w-4" /> Download</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => setHistoryTarget(item.Key!)}><History className="mr-2 h-4 w-4" /> Version History</DropdownMenuItem>
+                              <DropdownMenuItem className="text-destructive" onClick={() => setObjectToDelete(item.Key!)}><Trash2 className="mr-2 h-4 w-4" /> Delete</DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              ) : (
+                <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">This folder is empty.</TableCell></TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
       {isOwner && (
         <Card>
