@@ -43,12 +43,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Folder, File, AlertTriangle, Users, Trash2, Send, MoreVertical, Upload, FolderPlus, Eye, Download } from "lucide-react";
+import { ArrowLeft, Folder, File, AlertTriangle, Users, Trash2, Send, MoreVertical, FolderPlus, Eye, Download, FolderUp } from "lucide-react";
 import { showSuccess, showError, showLoading, dismissToast } from "@/utils/toast";
 import { CreateFolderDialog } from "@/components/CreateFolderDialog";
 import { UploadFileDialog } from "@/components/UploadFileDialog";
 import { DeleteObjectDialog } from "@/components/DeleteObjectDialog";
 import { PreviewFileDialog } from "@/components/PreviewFileDialog";
+import { UploadFolderDialog } from "@/components/UploadFolderDialog";
 
 interface BucketDetails {
   id: string;
@@ -83,6 +84,7 @@ const BucketPage = () => {
   const [isInviting, setIsInviting] = useState(false);
   const [isCreateFolderOpen, setCreateFolderOpen] = useState(false);
   const [isUploadFileOpen, setUploadFileOpen] = useState(false);
+  const [isUploadFolderOpen, setUploadFolderOpen] = useState(false);
   const [objectToDelete, setObjectToDelete] = useState<string | null>(null);
   const [previewState, setPreviewState] = useState<PreviewState | null>(null);
 
@@ -241,7 +243,7 @@ const BucketPage = () => {
           {parts.map((part, index) => {
             const path = parts.slice(0, index + 1).join('/') + '/';
             return (
-              <>
+              <React.Fragment key={path}>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
                   {index === parts.length - 1 ? (
@@ -252,7 +254,7 @@ const BucketPage = () => {
                     </BreadcrumbLink>
                   )}
                 </BreadcrumbItem>
-              </>
+              </React.Fragment>
             );
           })}
         </BreadcrumbList>
@@ -294,11 +296,14 @@ const BucketPage = () => {
                 )}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button><Upload className="mr-2 h-4 w-4" /> Upload</Button>
+                    <Button>Actions</Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent>
                     <DropdownMenuItem onClick={() => setUploadFileOpen(true)}>
                       <File className="mr-2 h-4 w-4" /> Upload Files
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setUploadFolderOpen(true)}>
+                      <FolderUp className="mr-2 h-4 w-4" /> Upload Folder
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setCreateFolderOpen(true)}>
                       <FolderPlus className="mr-2 h-4 w-4" /> Create Folder
@@ -372,6 +377,7 @@ const BucketPage = () => {
 
       {bucketName && <CreateFolderDialog open={isCreateFolderOpen} onOpenChange={setCreateFolderOpen} onFolderCreated={fetchBucketData} bucketName={bucketName} currentPrefix={currentPrefix} />}
       {bucketName && <UploadFileDialog open={isUploadFileOpen} onOpenChange={setUploadFileOpen} onUploadComplete={fetchBucketData} bucketName={bucketName} currentPrefix={currentPrefix} />}
+      {bucketName && <UploadFolderDialog open={isUploadFolderOpen} onOpenChange={setUploadFolderOpen} onUploadComplete={fetchBucketData} bucketName={bucketName} currentPrefix={currentPrefix} />}
       {bucketName && objectToDelete && <DeleteObjectDialog open={!!objectToDelete} onOpenChange={() => setObjectToDelete(null)} onObjectDeleted={fetchBucketData} bucketName={bucketName} objectKey={objectToDelete} />}
       {previewState && <PreviewFileDialog {...previewState} open={!!previewState} onOpenChange={() => setPreviewState(null)} />}
     </div>
