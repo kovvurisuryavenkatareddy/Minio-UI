@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { s3Client } from "@/lib/s3Client";
-import { DeleteBucketCommand } from "@aws-sdk/client-s3";
+import {
+  DeleteBucketCommand,
+  ListObjectVersionsCommand,
+  DeleteObjectsCommand,
+} from "@aws-sdk/client-s3";
 import { supabase } from "@/integrations/supabase/client";
 import {
   AlertDialog,
@@ -13,7 +17,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "./ui/button";
-import { showSuccess, showError } from "@/utils/toast";
+import { showSuccess, showError, showLoading, dismissToast } from "@/utils/toast";
 
 interface Bucket {
   id: string;
@@ -32,24 +36,70 @@ export const DeleteBucketDialog = ({ bucket, open, onOpenChange, onBucketDeleted
 
   const handleDelete = async () => {
     if (!bucket || !s3Client) {
-        showError("S3 client not initialized or bucket is missing.");
-        return;
+      showError("S3 client not initialized or bucket is missing.");
+      return;
     }
     setIsDeleting(true);
+    const loadingToast = showLoading(`Preparing to delete bucket "${bucket.name}"...`);
+
     try {
-      // 1. Delete from MinIO
+      // Step 1: List all object versions and delete markers in the bucket
+      let isTruncated = true;
+      let keyMarker: string | undefined = undefined;
+      let versionIdMarker: string | undefined = undefined;
+      
+      dismissToast(loadingToast);
+      const deletingObjectsToast = showLoading(`Deleting objects from bucket "${bucket.name}"...`);
+
+      while (isTruncated) {
+        const { Versions, DeleteMarkers, IsTruncated, NextKeyMarker, NextVersionIdMarker } = await s3Client.send(
+          new ListObjectVersionsCommand({
+            Bucket: bucket.name,
+            KeyMarker: keyMarker,
+            VersionIdMarker: versionIdMarker,
+          })
+        );
+
+        const objectsToDelete = [
+          ...(Versions || []).map(v => ({ Key: v.Key, VersionId: v.VersionId })),
+          ...(DeleteMarkers || []).map(m => ({ Key: m.Key, VersionId: m.VersionId }))
+        ];
+
+        // Step 2: Delete all objects and versions if any exist
+        if (objectsToDelete.length > 0) {
+          // S3 DeleteObjects can handle up to 1000 objects per request
+          for (let i = 0; i < objectsToDelete.length; i += 1000) {
+            const chunk = objectsToDelete.slice(i, i + 1000);
+            await s3Client.send(new DeleteObjectsCommand({
+              Bucket: bucket.name,
+              Delete: { Objects: chunk },
+            }));
+          }
+        }
+
+        isTruncated = !!IsTruncated;
+        keyMarker = NextKeyMarker;
+        versionIdMarker = NextVersionIdMarker;
+      }
+      
+      dismissToast(deletingObjectsToast);
+      const deletingBucketToast = showLoading(`Deleting bucket "${bucket.name}"...`);
+
+      // Step 3: Delete the now-empty bucket from MinIO
       await s3Client.send(new DeleteBucketCommand({ Bucket: bucket.name }));
 
-      // 2. Delete from Supabase
+      // Step 4: Delete the bucket record from Supabase
       const { error: supabaseError } = await supabase.from("buckets").delete().eq("id", bucket.id);
       if (supabaseError) throw supabaseError;
 
-      showSuccess(`Bucket "${bucket.name}" deleted successfully.`);
+      dismissToast(deletingBucketToast);
+      showSuccess(`Bucket "${bucket.name}" and all its contents have been deleted.`);
       onBucketDeleted();
       onOpenChange(false);
     } catch (err: any) {
+      dismissToast(loadingToast);
       console.error(err);
-      showError(err.message || "Failed to delete bucket. It might not be empty.");
+      showError(err.message || "An unexpected error occurred during bucket deletion.");
     } finally {
       setIsDeleting(false);
     }
@@ -59,9 +109,9 @@ export const DeleteBucketDialog = ({ bucket, open, onOpenChange, onBucketDeleted
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+          <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
           <AlertDialogDescription>
-            This action cannot be undone. This will permanently delete the <strong>{bucket?.name}</strong> bucket.
+            This action cannot be undone. This will permanently delete the <strong>{bucket?.name}</strong> bucket and all of its contents, including all file versions.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
