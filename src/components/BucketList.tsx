@@ -13,7 +13,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Server, Trash2, PlusCircle, Globe, Lock } from "lucide-react";
+import { Server, Trash2, PlusCircle, Globe, Lock, RefreshCw } from "lucide-react";
 import { CreateBucketDialog } from "./CreateBucketDialog";
 import { DeleteBucketDialog } from "./DeleteBucketDialog";
 import { Badge } from "./ui/badge";
@@ -78,9 +78,14 @@ const BucketList = () => {
               </CardTitle>
               <CardDescription>Click on a bucket to view its contents.</CardDescription>
             </div>
-            <Button onClick={() => setCreateDialogOpen(true)}>
-              <PlusCircle className="mr-2 h-4 w-4" /> Create Bucket
-            </Button>
+            <div className="flex items-center space-x-2">
+              <Button variant="outline" size="icon" onClick={fetchBuckets} disabled={loading}>
+                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              </Button>
+              <Button onClick={() => setCreateDialogOpen(true)}>
+                <PlusCircle className="mr-2 h-4 w-4" /> Create Bucket
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
