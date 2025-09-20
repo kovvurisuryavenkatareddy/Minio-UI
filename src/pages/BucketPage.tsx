@@ -43,7 +43,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Folder, File, AlertTriangle, Users, Trash2, Send, MoreVertical, FolderPlus, Eye, Download, FolderUp, RefreshCw, History } from "lucide-react";
+import { Folder, File, AlertTriangle, Users, Trash2, Send, MoreVertical, FolderPlus, Eye, Download, FolderUp, RefreshCw, History, Share2 } from "lucide-react";
 import { showSuccess, showError, showLoading, dismissToast } from "@/utils/toast";
 import { CreateFolderDialog } from "@/components/CreateFolderDialog";
 import { UploadFileDialog } from "@/components/UploadFileDialog";
@@ -51,6 +51,8 @@ import { DeleteObjectDialog } from "@/components/DeleteObjectDialog";
 import { PreviewFileDialog } from "@/components/PreviewFileDialog";
 import { UploadFolderDialog } from "@/components/UploadFolderDialog";
 import { VersionHistoryDialog } from "@/components/VersionHistoryDialog";
+import { ShareFileDialog } from "@/components/ShareFileDialog";
+import { DeleteFolderDialog } from "@/components/DeleteFolderDialog";
 
 interface BucketDetails {
   id: string;
@@ -87,8 +89,10 @@ const BucketPage = () => {
   const [isUploadFileOpen, setUploadFileOpen] = useState(false);
   const [isUploadFolderOpen, setUploadFolderOpen] = useState(false);
   const [objectToDelete, setObjectToDelete] = useState<string | null>(null);
+  const [folderToDelete, setFolderToDelete] = useState<string | null>(null);
   const [previewState, setPreviewState] = useState<PreviewState | null>(null);
   const [historyTarget, setHistoryTarget] = useState<string | null>(null);
+  const [objectToShare, setObjectToShare] = useState<string | null>(null);
 
   const fetchBucketData = async () => {
     if (!bucketName || !s3Client) {
@@ -343,8 +347,17 @@ const BucketPage = () => {
                             <DropdownMenuContent>
                               <DropdownMenuItem onClick={() => handlePreview(item.Key!)}><Eye className="mr-2 h-4 w-4" /> Preview</DropdownMenuItem>
                               <DropdownMenuItem onClick={() => handleDownload(item.Key!)}><Download className="mr-2 h-4 w-4" /> Download</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => setObjectToShare(item.Key!)}><Share2 className="mr-2 h-4 w-4" /> Share</DropdownMenuItem>
                               <DropdownMenuItem onClick={() => setHistoryTarget(item.Key!)}><History className="mr-2 h-4 w-4" /> Version History</DropdownMenuItem>
                               <DropdownMenuItem className="text-destructive" onClick={() => setObjectToDelete(item.Key!)}><Trash2 className="mr-2 h-4 w-4" /> Delete</DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                         {item.type === 'folder' && item.Prefix && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                            <DropdownMenuContent>
+                              <DropdownMenuItem className="text-destructive" onClick={() => setFolderToDelete(item.Prefix!)}><Trash2 className="mr-2 h-4 w-4" /> Delete</DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         )}
@@ -388,6 +401,8 @@ const BucketPage = () => {
       {bucketName && objectToDelete && <DeleteObjectDialog open={!!objectToDelete} onOpenChange={() => setObjectToDelete(null)} onObjectDeleted={handleRefresh} bucketName={bucketName} objectKey={objectToDelete} />}
       {previewState && <PreviewFileDialog {...previewState} open={!!previewState} onOpenChange={() => setPreviewState(null)} />}
       {bucketName && historyTarget && <VersionHistoryDialog open={!!historyTarget} onOpenChange={() => setHistoryTarget(null)} onVersionRestored={handleRefresh} bucketName={bucketName} objectKey={historyTarget} />}
+      {bucketName && objectToShare && <ShareFileDialog open={!!objectToShare} onOpenChange={() => setObjectToShare(null)} bucketName={bucketName} objectKey={objectToShare} />}
+      {bucketName && folderToDelete && <DeleteFolderDialog open={!!folderToDelete} onOpenChange={() => setFolderToDelete(null)} onFolderDeleted={handleRefresh} bucketName={bucketName} folderPrefix={folderToDelete} />}
     </div>
   );
 };
