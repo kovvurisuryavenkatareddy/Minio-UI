@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ThemeSwitcher } from "./ThemeSwitcher";
+import { SearchInput } from "./SearchInput";
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -32,17 +33,20 @@ const Header = ({ onMenuClick }: HeaderProps) => {
 
   return (
     <header className="z-10 py-4 bg-white shadow-sm dark:bg-gray-800 border-b">
-      <div className="container flex items-center justify-between h-full px-6 mx-auto text-primary dark:text-gray-200 md:justify-end">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="md:hidden"
-          onClick={onMenuClick}
-        >
-          <Menu className="h-6 w-6" />
-          <span className="sr-only">Open sidebar</span>
-        </Button>
-        <div className="flex items-center space-x-2">
+      <div className="container flex items-center justify-between h-full px-6 mx-auto text-primary dark:text-gray-200">
+        <div className="flex items-center flex-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="md:hidden mr-4"
+            onClick={onMenuClick}
+          >
+            <Menu className="h-6 w-6" />
+            <span className="sr-only">Open sidebar</span>
+          </Button>
+          <SearchInput />
+        </div>
+        <div className="flex items-center space-x-2 ml-4">
           <ThemeSwitcher />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

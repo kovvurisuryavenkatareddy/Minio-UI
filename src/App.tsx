@@ -12,6 +12,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import Layout from "./components/Layout";
 import { ThemeProvider } from "./components/ThemeProvider";
 import UpdatePassword from "./pages/UpdatePassword";
+import SearchPage from "./pages/SearchPage";
 
 const queryClient = new QueryClient();
 
@@ -37,6 +38,7 @@ const App = () => (
                 <Route element={<AppLayout />}>
                   <Route path="/" element={<Index />} />
                   <Route path="/bucket/:bucketName/*" element={<BucketPage />} />
+                  <Route path="/search" element={<SearchPage />} />
                 </Route>
               </Route>
 
