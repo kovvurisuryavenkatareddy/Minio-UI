@@ -43,6 +43,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Folder, File, AlertTriangle, Users, Trash2, Send, MoreVertical, FolderPlus, Eye, Download, FolderUp, RefreshCw, History, Share2 } from "lucide-react";
 import { showSuccess, showError, showLoading, dismissToast } from "@/utils/toast";
 import { CreateFolderDialog } from "@/components/CreateFolderDialog";
@@ -53,6 +54,7 @@ import { UploadFolderDialog } from "@/components/UploadFolderDialog";
 import { VersionHistoryDialog } from "@/components/VersionHistoryDialog";
 import { ShareFileDialog } from "@/components/ShareFileDialog";
 import { DeleteFolderDialog } from "@/components/DeleteFolderDialog";
+import { DeleteMultipleObjectsDialog } from "@/components/DeleteMultipleObjectsDialog";
 
 interface BucketDetails {
   id: string;
@@ -93,6 +95,8 @@ const BucketPage = () => {
   const [previewState, setPreviewState] = useState<PreviewState | null>(null);
   const [historyTarget, setHistoryTarget] = useState<string | null>(null);
   const [objectToShare, setObjectToShare] = useState<string | null>(null);
+  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
+  const [isDeleteMultipleOpen, setDeleteMultipleOpen] = useState(false);
 
   const fetchBucketData = async () => {
     if (!bucketName || !s3Client) {
@@ -237,6 +241,26 @@ const BucketPage = () => {
 
   const isOwner = session?.user.id === bucketDetails?.owner_id;
 
+  const fileItems = items.filter(item => item.type === 'file') as (_Object & { type: 'file' })[];
+  const numSelected = selectedKeys.length;
+  const numFiles = fileItems.length;
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedKeys(fileItems.map(file => file.Key!));
+    } else {
+      setSelectedKeys([]);
+    }
+  };
+
+  const handleSelectOne = (key: string, checked: boolean) => {
+    if (checked) {
+      setSelectedKeys(prev => [...prev, key]);
+    } else {
+      setSelectedKeys(prev => prev.filter(k => k !== key));
+    }
+  };
+
   const renderBreadcrumbs = () => {
     const parts = currentPrefix.split('/').filter(Boolean);
     return (
@@ -288,8 +312,14 @@ const BucketPage = () => {
               {renderBreadcrumbs()}
             </div>
             <div className="flex items-center space-x-2">
+              {numSelected > 0 && (
+                <Button variant="destructive" size="sm" onClick={() => setDeleteMultipleOpen(true)}>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete ({numSelected})
+                </Button>
+              )}
               {isOwner && bucketDetails && (
-                <div className="flex items-center space-x-2 mr-4">
+                <div className="flex items-center space-x-2">
                   <Label htmlFor="privacy-switch">Private</Label>
                   <Switch id="privacy-switch" checked={bucketDetails.is_public} onCheckedChange={handlePrivacyChange} />
                   <Label htmlFor="privacy-switch">Public</Label>
@@ -319,7 +349,16 @@ const BucketPage = () => {
         </CardHeader>
         <CardContent>
           <Table>
-            <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Size</TableHead><TableHead>Last Modified</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow>
+              <TableHead className="w-[40px]">
+                <Checkbox
+                  checked={numFiles > 0 && numSelected === numFiles ? true : numSelected > 0 ? 'indeterminate' : false}
+                  onCheckedChange={(checked) => handleSelectAll(!!checked)}
+                  aria-label="Select all rows"
+                  disabled={numFiles === 0}
+                />
+              </TableHead>
+              <TableHead>Name</TableHead><TableHead>Size</TableHead><TableHead>Last Modified</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
             <TableBody>
               {items.length > 0 ? (
                 items.map((item) => {
@@ -334,6 +373,15 @@ const BucketPage = () => {
                       }}
                       className={item.type === 'folder' ? 'cursor-pointer hover:bg-muted/50' : ''}
                     >
+                      <TableCell>
+                        {item.type === 'file' && item.Key ? (
+                          <Checkbox
+                            checked={selectedKeys.includes(item.Key)}
+                            onCheckedChange={(checked) => handleSelectOne(item.Key!, !!checked)}
+                            aria-label={`Select row for ${name}`}
+                          />
+                        ) : null}
+                      </TableCell>
                       <TableCell className="font-medium flex items-center">
                         {item.type === 'folder' ? <Folder className="mr-2 h-4 w-4 text-blue-500" /> : <File className="mr-2 h-4 w-4 text-muted-foreground" />}
                         <span>{name}</span>
@@ -366,7 +414,7 @@ const BucketPage = () => {
                   );
                 })
               ) : (
-                <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">This folder is empty.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">This folder is empty.</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
@@ -403,6 +451,7 @@ const BucketPage = () => {
       {bucketName && historyTarget && <VersionHistoryDialog open={!!historyTarget} onOpenChange={() => setHistoryTarget(null)} onVersionRestored={handleRefresh} bucketName={bucketName} objectKey={historyTarget} />}
       {bucketName && objectToShare && <ShareFileDialog open={!!objectToShare} onOpenChange={() => setObjectToShare(null)} bucketName={bucketName} objectKey={objectToShare} />}
       {bucketName && folderToDelete && <DeleteFolderDialog open={!!folderToDelete} onOpenChange={() => setFolderToDelete(null)} onFolderDeleted={handleRefresh} bucketName={bucketName} folderPrefix={folderToDelete} />}
+      {bucketName && isDeleteMultipleOpen && <DeleteMultipleObjectsDialog open={isDeleteMultipleOpen} onOpenChange={setDeleteMultipleOpen} onObjectsDeleted={() => { handleRefresh(); setSelectedKeys([]); }} bucketName={bucketName} objectKeys={selectedKeys} />}
     </div>
   );
 };
