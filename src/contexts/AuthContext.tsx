@@ -19,22 +19,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const getSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setSession(session);
-      setLoading(false);
-    };
-
-    getSession();
+    setLoading(true);
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // This callback handles all auth events, including the initial session.
+      // By setting loading to false here, we ensure we don't proceed until the
+      // auth state, including any recovery tokens in the URL, is fully processed.
+      setSession(session);
+      setLoading(false);
+
       if (event === 'PASSWORD_RECOVERY') {
         navigate('/update-password');
       }
-      setSession(session);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [navigate]);
 
   return (
