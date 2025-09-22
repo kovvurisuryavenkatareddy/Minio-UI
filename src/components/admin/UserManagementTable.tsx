@@ -26,21 +26,17 @@ import { EditUserDialog } from "./EditUserDialog";
 import { DeleteUserDialog } from "./DeleteUserDialog";
 
 const fetchUsers = async (): Promise<Profile[]> => {
-  const { data, error } = await supabase.from("profiles").select("*, user_email:auth.users(email)");
+  const { data, error } = await supabase.functions.invoke('get-all-users');
   
-  // This query is a bit complex because we need to get the email from the `auth.users` table.
-  // A view or RPC function could simplify this in the future.
-  // For now, we'll fetch profiles and then fetch the corresponding users from auth.
-  const { data: profiles, error: profilesError } = await supabase.from("profiles").select("*");
-  if (profilesError) throw profilesError;
+  if (error) {
+    // The edge function might return a structured error inside the data object
+    if (data && data.error) {
+      throw new Error(data.error);
+    }
+    throw new Error(error.message);
+  }
 
-  const userIds = profiles.map(p => p.id);
-  const { data: usersData, error: usersError } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
-  if (usersError) throw usersError;
-
-  const usersMap = new Map(usersData.users.map(u => [u.id, u.email]));
-
-  return profiles.map(p => ({ ...p, email: usersMap.get(p.id) || 'N/A' }));
+  return data;
 };
 
 export const UserManagementTable = () => {
