@@ -15,7 +15,6 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { showSuccess, showError, showLoading, dismissToast } from "@/utils/toast";
 import { FolderUp } from "lucide-react";
-import { useProfile } from "@/contexts/ProfileContext";
 
 interface UploadFolderDialogProps {
   open: boolean;
@@ -30,7 +29,6 @@ export const UploadFolderDialog = ({ open, onOpenChange, onUploadComplete, bucke
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { updateSpaceUsage } = useProfile();
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setFiles(event.target.files);
@@ -49,13 +47,12 @@ export const UploadFolderDialog = ({ open, onOpenChange, onUploadComplete, bucke
     setIsUploading(true);
     setUploadProgress(0);
     const loadingToast = showLoading(`Uploading ${files.length} file(s)...`);
-    let totalSize = 0;
 
     try {
       const totalFiles = files.length;
       for (let i = 0; i < totalFiles; i++) {
         const file = files[i];
-        totalSize += file.size;
+        // Use webkitRelativePath to preserve folder structure
         const fileKey = `${currentPrefix}${file.webkitRelativePath}`;
         
         const fileBuffer = await file.arrayBuffer();
@@ -68,7 +65,6 @@ export const UploadFolderDialog = ({ open, onOpenChange, onUploadComplete, bucke
         setUploadProgress(((i + 1) / totalFiles) * 100);
       }
 
-      await updateSpaceUsage(totalSize);
       dismissToast(loadingToast);
       showSuccess(`Folder and its ${totalFiles} file(s) uploaded successfully.`);
       onUploadComplete();

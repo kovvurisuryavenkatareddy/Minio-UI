@@ -15,7 +15,6 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { showSuccess, showError, showLoading, dismissToast } from "@/utils/toast";
 import { UploadCloud } from "lucide-react";
-import { useProfile } from "@/contexts/ProfileContext";
 
 interface UploadFileDialogProps {
   open: boolean;
@@ -30,7 +29,6 @@ export const UploadFileDialog = ({ open, onOpenChange, onUploadComplete, bucketN
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { updateSpaceUsage } = useProfile();
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setFiles(event.target.files);
@@ -49,15 +47,14 @@ export const UploadFileDialog = ({ open, onOpenChange, onUploadComplete, bucketN
     setIsUploading(true);
     setUploadProgress(0);
     const loadingToast = showLoading(`Uploading ${files.length} file(s)...`);
-    let totalSize = 0;
 
     try {
       const totalFiles = files.length;
       for (let i = 0; i < totalFiles; i++) {
         const file = files[i];
-        totalSize += file.size;
         const fileKey = `${currentPrefix}${file.name}`;
         
+        // Fix: Read file to buffer to avoid streaming issues in the browser
         const fileBuffer = await file.arrayBuffer();
         await s3Client.send(new PutObjectCommand({
           Bucket: bucketName,
@@ -68,7 +65,6 @@ export const UploadFileDialog = ({ open, onOpenChange, onUploadComplete, bucketN
         setUploadProgress(((i + 1) / totalFiles) * 100);
       }
 
-      await updateSpaceUsage(totalSize);
       dismissToast(loadingToast);
       showSuccess(`${totalFiles} file(s) uploaded successfully.`);
       onUploadComplete();
