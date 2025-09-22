@@ -13,17 +13,20 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "./ui/button";
 import { showSuccess, showError } from "@/utils/toast";
+import { useProfile } from "@/contexts/ProfileContext";
 
 interface DeleteObjectDialogProps {
   bucketName: string;
   objectKey: string;
+  objectSize: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onObjectDeleted: () => void;
 }
 
-export const DeleteObjectDialog = ({ bucketName, objectKey, open, onOpenChange, onObjectDeleted }: DeleteObjectDialogProps) => {
+export const DeleteObjectDialog = ({ bucketName, objectKey, objectSize, open, onOpenChange, onObjectDeleted }: DeleteObjectDialogProps) => {
   const [isDeleting, setIsDeleting] = useState(false);
+  const { updateSpaceUsage } = useProfile();
 
   const handleDelete = async () => {
     if (!s3Client) {
@@ -33,6 +36,7 @@ export const DeleteObjectDialog = ({ bucketName, objectKey, open, onOpenChange, 
     setIsDeleting(true);
     try {
       await s3Client.send(new DeleteObjectCommand({ Bucket: bucketName, Key: objectKey }));
+      await updateSpaceUsage(-objectSize);
       showSuccess(`File "${objectKey.split('/').pop()}" deleted successfully.`);
       onObjectDeleted();
       onOpenChange(false);

@@ -82,6 +82,11 @@ interface PreviewState {
   fileType: string;
 }
 
+interface S3Object {
+  key: string;
+  size: number;
+}
+
 const BucketPage = () => {
   const params = useParams();
   const navigate = useNavigate();
@@ -97,12 +102,12 @@ const BucketPage = () => {
   const [isCreateFolderOpen, setCreateFolderOpen] = useState(false);
   const [isUploadFileOpen, setUploadFileOpen] = useState(false);
   const [isUploadFolderOpen, setUploadFolderOpen] = useState(false);
-  const [objectToDelete, setObjectToDelete] = useState<string | null>(null);
+  const [objectToDelete, setObjectToDelete] = useState<S3Object | null>(null);
   const [folderToDelete, setFolderToDelete] = useState<string | null>(null);
   const [previewState, setPreviewState] = useState<PreviewState | null>(null);
   const [historyTarget, setHistoryTarget] = useState<string | null>(null);
   const [objectToShare, setObjectToShare] = useState<string | null>(null);
-  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
+  const [selectedObjects, setSelectedObjects] = useState<S3Object[]>([]);
   const [isDeleteMultipleOpen, setDeleteMultipleOpen] = useState(false);
 
   const fetchBucketData = async () => {
@@ -153,15 +158,8 @@ const BucketPage = () => {
   }, [members, session]);
 
   const canWrite = useMemo(() => {
-    // First, check for public write access. Anyone can write.
-    if (bucketDetails?.public_level === 'read-write') {
-      return true;
-    }
-    // If not public write, check for authenticated user with specific roles.
-    if (session) {
-      return currentUserRole === 'owner' || currentUserRole === 'read-write';
-    }
-    // Otherwise, no write access.
+    if (bucketDetails?.public_level === 'read-write') return true;
+    if (session) return currentUserRole === 'owner' || currentUserRole === 'read-write';
     return false;
   }, [session, currentUserRole, bucketDetails]);
 
@@ -177,10 +175,7 @@ const BucketPage = () => {
   const handlePrivacyChange = async (publicLevel: string) => {
     if (!bucketDetails) return;
     try {
-      const { error } = await supabase
-        .from("buckets")
-        .update({ public_level: publicLevel })
-        .eq("id", bucketDetails.id);
+      const { error } = await supabase.from("buckets").update({ public_level: publicLevel }).eq("id", bucketDetails.id);
       if (error) throw error;
       showSuccess(`Bucket access level updated.`);
       queryClient.invalidateQueries({ queryKey: ['bucketData', bucketName, currentPrefix, session?.user?.id] });
@@ -242,7 +237,7 @@ const BucketPage = () => {
     if (!s3Client || !bucketName) return null;
     try {
       const command = new GetObjectCommand({ Bucket: bucketName, Key: key });
-      return await getSignedUrl(s3Client, command, { expiresIn: 3600 }); // 1 hour
+      return await getSignedUrl(s3Client, command, { expiresIn: 3600 });
     } catch (err) {
       console.error("Error creating presigned URL", err);
       showError("Could not generate link for file.");
@@ -284,22 +279,22 @@ const BucketPage = () => {
   const isOwner = session?.user.id === bucketDetails?.owner_id;
 
   const fileItems = items.filter(item => item.type === 'file') as (_Object & { type: 'file' })[];
-  const numSelected = selectedKeys.length;
+  const numSelected = selectedObjects.length;
   const numFiles = fileItems.length;
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedKeys(fileItems.map(file => file.Key!));
+      setSelectedObjects(fileItems.map(file => ({ key: file.Key!, size: file.Size || 0 })));
     } else {
-      setSelectedKeys([]);
+      setSelectedObjects([]);
     }
   };
 
-  const handleSelectOne = (key: string, checked: boolean) => {
+  const handleSelectOne = (key: string, size: number, checked: boolean) => {
     if (checked) {
-      setSelectedKeys(prev => [...prev, key]);
+      setSelectedObjects(prev => [...prev, { key, size }]);
     } else {
-      setSelectedKeys(prev => prev.filter(k => k !== key));
+      setSelectedObjects(prev => prev.filter(obj => obj.key !== key));
     }
   };
 
@@ -308,24 +303,14 @@ const BucketPage = () => {
     return (
       <Breadcrumb>
         <BreadcrumbList>
-          <BreadcrumbItem>
-            <BreadcrumbLink className="cursor-pointer" onClick={() => navigate(`/bucket/${bucketName}`)}>
-              {bucketName}
-            </BreadcrumbLink>
-          </BreadcrumbItem>
+          <BreadcrumbItem><BreadcrumbLink className="cursor-pointer" onClick={() => navigate(`/bucket/${bucketName}`)}>{bucketName}</BreadcrumbLink></BreadcrumbItem>
           {parts.map((part, index) => {
             const path = parts.slice(0, index + 1).join('/');
             return (
               <React.Fragment key={path}>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
-                  {index === parts.length - 1 ? (
-                    <BreadcrumbPage>{part}</BreadcrumbPage>
-                  ) : (
-                    <BreadcrumbLink className="cursor-pointer" onClick={() => navigate(`/bucket/${bucketName}/${path}/`)}>
-                      {part}
-                    </BreadcrumbLink>
-                  )}
+                  {index === parts.length - 1 ? <BreadcrumbPage>{part}</BreadcrumbPage> : <BreadcrumbLink className="cursor-pointer" onClick={() => navigate(`/bucket/${bucketName}/${path}/`)}>{part}</BreadcrumbLink>}
                 </BreadcrumbItem>
               </React.Fragment>
             );
@@ -335,192 +320,64 @@ const BucketPage = () => {
     );
   };
 
-  if (isLoading) {
-    return <div className="space-y-4"><Skeleton className="h-8 w-1/2" /><Skeleton className="h-96 w-full" /></div>;
-  }
-
-  if (isError) {
-    return (
-      <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Error</AlertTitle><AlertDescription>{(error as Error).message}</AlertDescription></Alert>
-    );
-  }
+  if (isLoading) return <div className="space-y-4"><Skeleton className="h-8 w-1/2" /><Skeleton className="h-96 w-full" /></div>;
+  if (isError) return <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Error</AlertTitle><AlertDescription>{(error as Error).message}</AlertDescription></Alert>;
 
   return (
     <div className="grid gap-6">
       <Card>
         <CardHeader>
           <div className="flex justify-between items-start">
-            <div>
-              {renderBreadcrumbs()}
-            </div>
+            <div>{renderBreadcrumbs()}</div>
             <div className="flex items-center space-x-2">
-              {canWrite && numSelected > 0 && (
-                <Button variant="destructive" size="sm" onClick={() => setDeleteMultipleOpen(true)}>
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete ({numSelected})
-                </Button>
-              )}
-              {isOwner && bucketDetails && (
-                <Select value={bucketDetails.public_level} onValueChange={handlePrivacyChange}>
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="Set access level" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="private">Private</SelectItem>
-                    <SelectItem value="read-only">Public Read-Only</SelectItem>
-                    <SelectItem value="read-write">Public Read/Write</SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
-              <Button variant="outline" size="icon" onClick={handleRefresh} disabled={isFetching}>
-                <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-              </Button>
-              {canWrite && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button>Actions</Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent>
-                    <DropdownMenuItem onClick={() => setUploadFileOpen(true)}>
-                      <File className="mr-2 h-4 w-4" /> Upload Files
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setUploadFolderOpen(true)}>
-                      <FolderUp className="mr-2 h-4 w-4" /> Upload Folder
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setCreateFolderOpen(true)}>
-                      <FolderPlus className="mr-2 h-4 w-4" /> Create Folder
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
+              {canWrite && numSelected > 0 && <Button variant="destructive" size="sm" onClick={() => setDeleteMultipleOpen(true)}><Trash2 className="mr-2 h-4 w-4" />Delete ({numSelected})</Button>}
+              {isOwner && bucketDetails && <Select value={bucketDetails.public_level} onValueChange={handlePrivacyChange}><SelectTrigger className="w-[180px]"><SelectValue placeholder="Set access level" /></SelectTrigger><SelectContent><SelectItem value="private">Private</SelectItem><SelectItem value="read-only">Public Read-Only</SelectItem><SelectItem value="read-write">Public Read/Write</SelectItem></SelectContent></Select>}
+              <Button variant="outline" size="icon" onClick={handleRefresh} disabled={isFetching}><RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} /></Button>
+              {canWrite && <DropdownMenu><DropdownMenuTrigger asChild><Button>Actions</Button></DropdownMenuTrigger><DropdownMenuContent><DropdownMenuItem onClick={() => setUploadFileOpen(true)}><File className="mr-2 h-4 w-4" /> Upload Files</DropdownMenuItem><DropdownMenuItem onClick={() => setUploadFolderOpen(true)}><FolderUp className="mr-2 h-4 w-4" /> Upload Folder</DropdownMenuItem><DropdownMenuItem onClick={() => setCreateFolderOpen(true)}><FolderPlus className="mr-2 h-4 w-4" /> Create Folder</DropdownMenuItem></DropdownMenuContent></DropdownMenu>}
             </div>
           </div>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader><TableRow>
-              {canWrite && <TableHead className="w-[40px]">
-                <Checkbox
-                  checked={numFiles > 0 && numSelected === numFiles ? true : numSelected > 0 ? 'indeterminate' : false}
-                  onCheckedChange={(checked) => handleSelectAll(!!checked)}
-                  aria-label="Select all rows"
-                  disabled={numFiles === 0}
-                />
-              </TableHead>}
+              {canWrite && <TableHead className="w-[40px]"><Checkbox checked={numFiles > 0 && numSelected === numFiles ? true : numSelected > 0 ? 'indeterminate' : false} onCheckedChange={(checked) => handleSelectAll(!!checked)} aria-label="Select all rows" disabled={numFiles === 0} /></TableHead>}
               <TableHead>Name</TableHead><TableHead>Size</TableHead><TableHead>Last Modified</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
             <TableBody>
-              {items.length > 0 ? (
-                items.map((item) => {
-                  const name = item.type === 'folder' ? item.Prefix?.replace(currentPrefix, '').replace('/', '') : item.Key?.replace(currentPrefix, '');
-                  return (
-                    <TableRow 
-                      key={item.type === 'folder' ? item.Prefix : item.Key}
-                      onDoubleClick={() => {
-                        if (item.type === 'folder' && item.Prefix) {
-                          navigate(`/bucket/${bucketName}/${item.Prefix}`);
-                        }
-                      }}
-                      className={item.type === 'folder' ? 'cursor-pointer hover:bg-muted/50' : ''}
-                    >
-                      {canWrite && <TableCell>
-                        {item.type === 'file' && item.Key ? (
-                          <Checkbox
-                            checked={selectedKeys.includes(item.Key)}
-                            onCheckedChange={(checked) => handleSelectOne(item.Key!, !!checked)}
-                            aria-label={`Select row for ${name}`}
-                          />
-                        ) : null}
-                      </TableCell>}
-                      <TableCell className="font-medium flex items-center">
-                        {item.type === 'folder' ? <Folder className="mr-2 h-4 w-4 text-blue-500" /> : <File className="mr-2 h-4 w-4 text-muted-foreground" />}
-                        <span>{name}</span>
-                      </TableCell>
-                      <TableCell>{item.type === 'file' ? formatBytes(item.Size) : '-'}</TableCell>
-                      <TableCell>{item.type === 'file' ? item.LastModified?.toLocaleString() : '-'}</TableCell>
-                      <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4" /></Button></DropdownMenuTrigger>
-                          <DropdownMenuContent>
-                            {item.type === 'file' && item.Key && (
-                              <>
-                                <DropdownMenuItem onClick={() => handlePreview(item.Key!)}><Eye className="mr-2 h-4 w-4" /> Preview</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleDownload(item.Key!)}><Download className="mr-2 h-4 w-4" /> Download</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => setObjectToShare(item.Key!)}><Share2 className="mr-2 h-4 w-4" /> Share</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => setHistoryTarget(item.Key!)}><History className="mr-2 h-4 w-4" /> Version History</DropdownMenuItem>
-                              </>
-                            )}
-                            {canWrite && (
-                              <DropdownMenuItem className="text-destructive" onClick={() => item.type === 'file' ? setObjectToDelete(item.Key!) : setFolderToDelete(item.Prefix!)}>
-                                <Trash2 className="mr-2 h-4 w-4" /> Delete
-                              </DropdownMenuItem>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              ) : (
-                <TableRow><TableCell colSpan={canWrite ? 5 : 4} className="text-center py-8 text-muted-foreground">This folder is empty.</TableCell></TableRow>
-              )}
+              {items.length > 0 ? items.map((item) => {
+                const name = item.type === 'folder' ? item.Prefix?.replace(currentPrefix, '').replace('/', '') : item.Key?.replace(currentPrefix, '');
+                return (
+                  <TableRow key={item.type === 'folder' ? item.Prefix : item.Key} onDoubleClick={() => { if (item.type === 'folder' && item.Prefix) navigate(`/bucket/${bucketName}/${item.Prefix}`); }} className={item.type === 'folder' ? 'cursor-pointer hover:bg-muted/50' : ''}>
+                    {canWrite && <TableCell>{item.type === 'file' && item.Key ? <Checkbox checked={selectedObjects.some(obj => obj.key === item.Key)} onCheckedChange={(checked) => handleSelectOne(item.Key!, item.Size || 0, !!checked)} aria-label={`Select row for ${name}`} /> : null}</TableCell>}
+                    <TableCell className="font-medium flex items-center">{item.type === 'folder' ? <Folder className="mr-2 h-4 w-4 text-blue-500" /> : <File className="mr-2 h-4 w-4 text-muted-foreground" />}<span>{name}</span></TableCell>
+                    <TableCell>{item.type === 'file' ? formatBytes(item.Size) : '-'}</TableCell>
+                    <TableCell>{item.type === 'file' ? item.LastModified?.toLocaleString() : '-'}</TableCell>
+                    <TableCell className="text-right"><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent>
+                      {item.type === 'file' && item.Key && (<>
+                        <DropdownMenuItem onClick={() => handlePreview(item.Key!)}><Eye className="mr-2 h-4 w-4" /> Preview</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleDownload(item.Key!)}><Download className="mr-2 h-4 w-4" /> Download</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setObjectToShare(item.Key!)}><Share2 className="mr-2 h-4 w-4" /> Share</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setHistoryTarget(item.Key!)}><History className="mr-2 h-4 w-4" /> Version History</DropdownMenuItem></>)}
+                      {canWrite && <DropdownMenuItem className="text-destructive" onClick={() => item.type === 'file' ? setObjectToDelete({ key: item.Key!, size: item.Size || 0 }) : setFolderToDelete(item.Prefix!)}><Trash2 className="mr-2 h-4 w-4" /> Delete</DropdownMenuItem>}
+                    </DropdownMenuContent></DropdownMenu></TableCell>
+                  </TableRow>
+                );
+              }) : <TableRow><TableCell colSpan={canWrite ? 5 : 4} className="text-center py-8 text-muted-foreground">This folder is empty.</TableCell></TableRow>}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
 
-      {isOwner && (
-        <Card>
-          <CardHeader><CardTitle className="flex items-center"><Users className="mr-2 h-5 w-5" />Manage Access</CardTitle><CardDescription>Invite users and manage roles for this private bucket.</CardDescription></CardHeader>
-          <CardContent className="space-y-2">
-            {members.map(member => (
-              <div key={member.user_id} className="flex items-center justify-between rounded-md border p-3 text-sm">
-                <div className="flex items-center gap-3"><span className="font-medium">{member.email}</span><Badge variant={member.is_owner ? "default" : "secondary"}>{member.role}</Badge></div>
-                <div className="flex items-center gap-2">
-                  {!member.is_owner && (
-                    <>
-                      <Select value={member.role} onValueChange={(newRole) => handleRoleChange(member.user_id, newRole)}>
-                        <SelectTrigger className="w-[130px] h-9">
-                          <SelectValue/>
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="read-only">Read-Only</SelectItem>
-                          <SelectItem value="read-write">Read/Write</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Button variant="ghost" size="icon" onClick={() => handleRemoveMember(member.user_id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                    </>
-                  )}
-                </div>
-              </div>
-            ))}
-          </CardContent>
-          <CardFooter>
-            <form onSubmit={handleInvite} className="flex w-full items-start space-x-2">
-              <Textarea placeholder="Enter emails separated by commas or new lines." value={inviteEmails} onChange={(e) => setInviteEmails(e.target.value)} required />
-              <Select value={inviteRole} onValueChange={setInviteRole}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Select a role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="read-only">Read-Only</SelectItem>
-                  <SelectItem value="read-write">Read/Write</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button type="submit" disabled={isInviting}><Send className="mr-2 h-4 w-4" />{isInviting ? 'Inviting...' : 'Invite'}</Button>
-            </form>
-          </CardFooter>
-        </Card>
-      )}
+      {isOwner && <Card><CardHeader><CardTitle className="flex items-center"><Users className="mr-2 h-5 w-5" />Manage Access</CardTitle><CardDescription>Invite users and manage roles for this private bucket.</CardDescription></CardHeader><CardContent className="space-y-2">{members.map(member => (<div key={member.user_id} className="flex items-center justify-between rounded-md border p-3 text-sm"><div className="flex items-center gap-3"><span className="font-medium">{member.email}</span><Badge variant={member.is_owner ? "default" : "secondary"}>{member.role}</Badge></div><div className="flex items-center gap-2">{!member.is_owner && (<><Select value={member.role} onValueChange={(newRole) => handleRoleChange(member.user_id, newRole)}><SelectTrigger className="w-[130px] h-9"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="read-only">Read-Only</SelectItem><SelectItem value="read-write">Read/Write</SelectItem></SelectContent></Select><Button variant="ghost" size="icon" onClick={() => handleRemoveMember(member.user_id)}><Trash2 className="h-4 w-4 text-destructive" /></Button></>)}</div></div>))}</CardContent><CardFooter><form onSubmit={handleInvite} className="flex w-full items-start space-x-2"><Textarea placeholder="Enter emails separated by commas or new lines." value={inviteEmails} onChange={(e) => setInviteEmails(e.target.value)} required /><Select value={inviteRole} onValueChange={setInviteRole}><SelectTrigger className="w-[180px]"><SelectValue placeholder="Select a role" /></SelectTrigger><SelectContent><SelectItem value="read-only">Read-Only</SelectItem><SelectItem value="read-write">Read/Write</SelectItem></SelectContent></Select><Button type="submit" disabled={isInviting}><Send className="mr-2 h-4 w-4" />{isInviting ? 'Inviting...' : 'Invite'}</Button></form></CardFooter></Card>}
 
       {bucketName && canWrite && <CreateFolderDialog open={isCreateFolderOpen} onOpenChange={setCreateFolderOpen} onFolderCreated={handleFolderCreated} bucketName={bucketName} currentPrefix={currentPrefix} />}
       {bucketName && canWrite && <UploadFileDialog open={isUploadFileOpen} onOpenChange={setUploadFileOpen} onUploadComplete={handleRefresh} bucketName={bucketName} currentPrefix={currentPrefix} />}
       {bucketName && canWrite && <UploadFolderDialog open={isUploadFolderOpen} onOpenChange={setUploadFolderOpen} onUploadComplete={handleRefresh} bucketName={bucketName} currentPrefix={currentPrefix} />}
-      {bucketName && objectToDelete && <DeleteObjectDialog open={!!objectToDelete} onOpenChange={() => setObjectToDelete(null)} onObjectDeleted={handleRefresh} bucketName={bucketName} objectKey={objectToDelete} />}
+      {bucketName && objectToDelete && <DeleteObjectDialog open={!!objectToDelete} onOpenChange={() => setObjectToDelete(null)} onObjectDeleted={handleRefresh} bucketName={bucketName} objectKey={objectToDelete.key} objectSize={objectToDelete.size} />}
       {previewState && <PreviewFileDialog {...previewState} open={!!previewState} onOpenChange={() => setPreviewState(null)} />}
       {bucketName && historyTarget && <VersionHistoryDialog open={!!historyTarget} onOpenChange={() => setHistoryTarget(null)} onVersionRestored={handleRefresh} bucketName={bucketName} objectKey={historyTarget} />}
       {bucketName && objectToShare && <ShareFileDialog open={!!objectToShare} onOpenChange={() => setObjectToShare(null)} bucketName={bucketName} objectKey={objectToShare} />}
       {bucketName && folderToDelete && <DeleteFolderDialog open={!!folderToDelete} onOpenChange={() => setFolderToDelete(null)} onFolderDeleted={handleRefresh} bucketName={bucketName} folderPrefix={folderToDelete} />}
-      {bucketName && isDeleteMultipleOpen && <DeleteMultipleObjectsDialog open={isDeleteMultipleOpen} onOpenChange={setDeleteMultipleOpen} onObjectsDeleted={() => { handleRefresh(); setSelectedKeys([]); }} bucketName={bucketName} objectKeys={selectedKeys} />}
+      {bucketName && isDeleteMultipleOpen && <DeleteMultipleObjectsDialog open={isDeleteMultipleOpen} onOpenChange={setDeleteMultipleOpen} onObjectsDeleted={() => { handleRefresh(); setSelectedObjects([]); }} bucketName={bucketName} objects={selectedObjects} />}
     </div>
   );
 };
