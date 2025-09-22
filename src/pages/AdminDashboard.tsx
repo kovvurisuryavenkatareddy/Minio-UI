@@ -2,6 +2,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Users, DatabaseZap, BarChart3 } from "lucide-react";
 import { UserManagementTable } from "@/components/admin/UserManagementTable";
+import { SpaceRequestTable } from "@/components/admin/SpaceRequestTable";
+import { StorageStats } from "@/components/admin/StorageStats";
 
 const AdminDashboard = () => {
   return (
@@ -11,8 +13,8 @@ const AdminDashboard = () => {
       <Tabs defaultValue="users">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="users"><Users className="mr-2 h-4 w-4" /> User Management</TabsTrigger>
-          <TabsTrigger value="requests" disabled><DatabaseZap className="mr-2 h-4 w-4" /> Space Requests</TabsTrigger>
-          <TabsTrigger value="stats" disabled><BarChart3 className="mr-2 h-4 w-4" /> Storage Stats</TabsTrigger>
+          <TabsTrigger value="requests"><DatabaseZap className="mr-2 h-4 w-4" /> Space Requests</TabsTrigger>
+          <TabsTrigger value="stats"><BarChart3 className="mr-2 h-4 w-4" /> Storage Stats</TabsTrigger>
         </TabsList>
         <TabsContent value="users">
           <Card>
@@ -29,9 +31,10 @@ const AdminDashboard = () => {
           <Card>
             <CardHeader>
               <CardTitle>Space Requests</CardTitle>
+              <CardDescription>Approve or reject user requests for more storage.</CardDescription>
             </CardHeader>
             <CardContent>
-              <p className="text-muted-foreground">This feature is coming soon.</p>
+              <SpaceRequestTable />
             </CardContent>
           </Card>
         </TabsContent>
@@ -39,9 +42,10 @@ const AdminDashboard = () => {
           <Card>
             <CardHeader>
               <CardTitle>Storage Statistics</CardTitle>
+              <CardDescription>Overall system storage allocation and usage.</CardDescription>
             </CardHeader>
             <CardContent>
-              <p className="text-muted-foreground">This feature is coming soon.</p>
+              <StorageStats />
             </CardContent>
           </Card>
         </TabsContent>
