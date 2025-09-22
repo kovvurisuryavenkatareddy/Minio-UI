@@ -2,12 +2,11 @@ import { useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { LoginForm } from '@/components/auth/LoginForm';
-import { SignUpForm } from '@/components/auth/SignUpForm';
 import { ForgotPasswordForm } from '@/components/auth/ForgotPasswordForm';
 
 const Login = () => {
   const { session } = useAuth();
-  const [view, setView] = useState<'sign_in' | 'sign_up' | 'forgot_password'>('sign_in');
+  const [view, setView] = useState<'sign_in' | 'forgot_password'>('sign_in');
 
   if (session) {
     return <Navigate to="/" />;
@@ -15,8 +14,6 @@ const Login = () => {
 
   const renderView = () => {
     switch (view) {
-      case 'sign_up':
-        return <SignUpForm setView={setView} />;
       case 'forgot_password':
         return <ForgotPasswordForm setView={setView} />;
       default:

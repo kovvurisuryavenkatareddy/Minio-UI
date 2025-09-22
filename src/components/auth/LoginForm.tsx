@@ -16,7 +16,7 @@ const formSchema = z.object({
 });
 
 interface LoginFormProps {
-  setView: (view: 'sign_in' | 'sign_up' | 'forgot_password') => void;
+  setView: (view: 'sign_in' | 'forgot_password') => void;
 }
 
 export const LoginForm = ({ setView }: LoginFormProps) => {
@@ -47,12 +47,6 @@ export const LoginForm = ({ setView }: LoginFormProps) => {
   return (
     <div>
       <h2 className="text-2xl font-bold text-center text-gray-900 dark:text-gray-100">Welcome back</h2>
-      <p className="text-center text-sm text-muted-foreground mt-2">
-        Don't have an account?{' '}
-        <Button variant="link" className="p-0 h-auto" onClick={() => setView('sign_up')}>
-          Sign up
-        </Button>
-      </p>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 mt-6">
           <FormField

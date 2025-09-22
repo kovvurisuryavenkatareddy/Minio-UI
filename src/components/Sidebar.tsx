@@ -1,7 +1,7 @@
 import { Link, useLocation, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { HardDrive, ChevronRight } from "lucide-react";
+import { HardDrive, ChevronRight, Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Collapsible,
@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/collapsible";
 import { FolderTreeView } from "./FolderTreeView";
 import { Skeleton } from "./ui/skeleton";
+import { useProfile } from "@/contexts/ProfileContext";
 
 interface Bucket {
   id: string;
@@ -25,6 +26,7 @@ const SidebarContent = ({ onClose }: { onClose?: () => void }) => {
   const params = useParams();
   const location = useLocation();
   const activeBucketName = params.bucketName;
+  const { profile } = useProfile();
 
   const { data: buckets, isLoading } = useQuery<Bucket[]>({
     queryKey: ["allBuckets"],
@@ -64,6 +66,27 @@ const SidebarContent = ({ onClose }: { onClose?: () => void }) => {
             <span className="ml-4">My Buckets</span>
           </Link>
         </li>
+        {profile?.role === 'admin' && (
+          <li className="relative px-6 py-3">
+            {location.pathname.startsWith("/admin") && (
+              <span
+                className="absolute inset-y-0 left-0 w-1 bg-primary rounded-tr-lg rounded-br-lg"
+                aria-hidden="true"
+              ></span>
+            )}
+            <Link
+              to="/admin"
+              onClick={onClose}
+              className={cn(
+                "inline-flex items-center w-full text-sm font-semibold transition-colors duration-150 hover:text-gray-800 dark:hover:text-gray-200",
+                location.pathname.startsWith("/admin") && "text-gray-800 dark:text-gray-100"
+              )}
+            >
+              <Shield className="w-5 h-5" />
+              <span className="ml-4">Admin Dashboard</span>
+            </Link>
+          </li>
+        )}
         {isLoading ? (
           <div className="px-6 space-y-2 mt-2">
             <Skeleton className="h-6 w-full" />
