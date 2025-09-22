@@ -22,7 +22,7 @@ interface Bucket {
   id: string;
   name: string;
   owner_id: string;
-  is_public: boolean;
+  public_level: string;
 }
 
 const BucketList = () => {
@@ -114,9 +114,9 @@ const BucketList = () => {
                       <Link to={`/bucket/${bucket.name}`} className="font-medium hover:underline">
                         {bucket.name}
                       </Link>
-                      {bucket.is_public ? (
+                      {bucket.public_level !== 'private' ? (
                         <Badge variant="outline" className="flex items-center gap-1">
-                          <Globe className="h-3 w-3" /> Public
+                          <Globe className="h-3 w-3" /> Public {bucket.public_level === 'read-only' && 'Read-Only'}
                         </Badge>
                       ) : (
                         <Badge variant="secondary" className="flex items-center gap-1">

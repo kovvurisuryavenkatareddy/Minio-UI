@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { s3Client } from "@/lib/s3Client";
-import { CreateBucketCommand, PutBucketVersioningCommand } from "@aws-sdk/client-s3";
+import { CreateBucketCommand, PutBucketVersioningCommand, DeleteBucketCommand } from "@aws-sdk/client-s3";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -24,13 +24,12 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { showSuccess, showError } from "@/utils/toast";
 
 const formSchema = z.object({
   bucketName: z.string().min(3, "Bucket name must be at least 3 characters long."),
-  is_public: z.boolean().default(false),
+  public_level: z.string().default("private"),
 });
 
 interface CreateBucketDialogProps {
@@ -46,7 +45,7 @@ export const CreateBucketDialog = ({ open, onOpenChange, onBucketCreated }: Crea
     resolver: zodResolver(formSchema),
     defaultValues: {
       bucketName: "",
-      is_public: false,
+      public_level: "private",
     },
   });
 
@@ -62,35 +61,31 @@ export const CreateBucketDialog = ({ open, onOpenChange, onBucketCreated }: Crea
 
     setIsSubmitting(true);
     try {
-      // 1. Create the bucket in MinIO
       await s3Client.send(new CreateBucketCommand({ Bucket: values.bucketName }));
-
-      // 2. Enable versioning on the new bucket
       await s3Client.send(new PutBucketVersioningCommand({
         Bucket: values.bucketName,
-        VersioningConfiguration: {
-          Status: "Enabled",
-        },
+        VersioningConfiguration: { Status: "Enabled" },
       }));
 
-      // 3. Create the bucket record in Supabase
       const { error: supabaseError } = await supabase.from("buckets").insert({
         name: values.bucketName,
         owner_id: session.user.id,
-        is_public: values.is_public,
+        public_level: values.public_level,
       });
 
       if (supabaseError) {
+        console.error("Supabase insert failed, cleaning up MinIO bucket...");
+        await s3Client.send(new DeleteBucketCommand({ Bucket: values.bucketName }));
         throw new Error(`Failed to save bucket metadata: ${supabaseError.message}`);
       }
 
-      showSuccess(`Bucket "${values.bucketName}" created successfully with versioning enabled.`);
+      showSuccess(`Bucket "${values.bucketName}" created successfully.`);
       onBucketCreated();
       onOpenChange(false);
       form.reset();
     } catch (err: any) {
       console.error(err);
-      showError(err.message || "Failed to create bucket. Check the console for more details.");
+      showError(err.message || "Failed to create bucket.");
     } finally {
       setIsSubmitting(false);
     }
@@ -102,7 +97,7 @@ export const CreateBucketDialog = ({ open, onOpenChange, onBucketCreated }: Crea
         <DialogHeader>
           <DialogTitle>Create New Bucket</DialogTitle>
           <DialogDescription>
-            Enter a unique name for your new bucket. Versioning will be enabled by default.
+            Enter a unique name and set the access level for your new bucket.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -122,21 +117,27 @@ export const CreateBucketDialog = ({ open, onOpenChange, onBucketCreated }: Crea
             />
             <FormField
               control={form.control}
-              name="is_public"
+              name="public_level"
               render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
-                  <div className="space-y-0.5">
-                    <FormLabel>Public Bucket</FormLabel>
-                    <p className="text-sm text-muted-foreground">
-                      Anyone will be able to view the contents of this bucket.
-                    </p>
-                  </div>
+                <FormItem className="space-y-3">
+                  <FormLabel>Bucket Access Level</FormLabel>
                   <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
+                    <RadioGroup
+                      onValueChange={field.onChange}
+                      defaultValue={field.value}
+                      className="flex flex-col space-y-2 pt-2"
+                    >
+                      <FormItem className="flex items-center space-x-3 space-y-0">
+                        <FormControl><RadioGroupItem value="private" /></FormControl>
+                        <FormLabel className="font-normal">Private</FormLabel>
+                      </FormItem>
+                      <FormItem className="flex items-center space-x-3 space-y-0">
+                        <FormControl><RadioGroupItem value="read-only" /></FormControl>
+                        <FormLabel className="font-normal">Public Read-Only</FormLabel>
+                      </FormItem>
+                    </RadioGroup>
                   </FormControl>
+                  <FormMessage />
                 </FormItem>
               )}
             />
