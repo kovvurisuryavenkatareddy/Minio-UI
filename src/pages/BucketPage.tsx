@@ -153,10 +153,16 @@ const BucketPage = () => {
   }, [members, session]);
 
   const canWrite = useMemo(() => {
-    if (!session) {
-      return bucketDetails?.public_level === 'read-write';
+    // First, check for public write access. Anyone can write.
+    if (bucketDetails?.public_level === 'read-write') {
+      return true;
     }
-    return currentUserRole === 'owner' || currentUserRole === 'read-write';
+    // If not public write, check for authenticated user with specific roles.
+    if (session) {
+      return currentUserRole === 'owner' || currentUserRole === 'read-write';
+    }
+    // Otherwise, no write access.
+    return false;
   }, [session, currentUserRole, bucketDetails]);
 
   const handleRefresh = () => {
