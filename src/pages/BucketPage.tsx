@@ -128,29 +128,39 @@ const BucketPage = () => {
     const files: BucketItem[] = (s3Data.Contents || []).filter(c => c.Key !== currentPrefix).map(c => ({ ...c, type: 'file' }));
     const items = [...folders, ...files];
 
-    const { data: memberData, error: memberError } = await supabase.rpc('get_bucket_members', { p_bucket_id: bucketData.id });
-    if (memberError) throw new Error(`Failed to fetch members: ${memberError.message}`);
+    let memberData: BucketMember[] = [];
+    if (session) {
+      const { data, error: memberError } = await supabase.rpc('get_bucket_members', { p_bucket_id: bucketData.id });
+      if (memberError) console.error(`Failed to fetch members: ${memberError.message}`);
+      else memberData = data || [];
+    }
     
-    return { bucketDetails: bucketData, items, members: memberData || [] };
+    return { bucketDetails: bucketData, items, members: memberData };
   };
 
   const { data, error, isLoading, isFetching, isError } = useQuery({
-    queryKey: ['bucketData', bucketName, currentPrefix],
+    queryKey: ['bucketData', bucketName, currentPrefix, session?.user?.id],
     queryFn: fetchBucketData,
     refetchOnWindowFocus: false,
-    enabled: !!bucketName && !!session,
+    enabled: !!bucketName,
   });
 
   const { bucketDetails, items = [], members = [] } = data || {};
 
   const currentUserRole = useMemo(() => {
-    return members.find(m => m.user_id === session?.user.id)?.role;
+    if (!session) return null;
+    return members.find(m => m.user_id === session.user.id)?.role;
   }, [members, session]);
 
-  const canWrite = currentUserRole === 'owner' || currentUserRole === 'read-write' || bucketDetails?.public_level === 'read-write';
+  const canWrite = useMemo(() => {
+    if (!session) {
+      return bucketDetails?.public_level === 'read-write';
+    }
+    return currentUserRole === 'owner' || currentUserRole === 'read-write';
+  }, [session, currentUserRole, bucketDetails]);
 
   const handleRefresh = () => {
-    queryClient.invalidateQueries({ queryKey: ['bucketData', bucketName, currentPrefix] });
+    queryClient.invalidateQueries({ queryKey: ['bucketData', bucketName, currentPrefix, session?.user?.id] });
     queryClient.invalidateQueries({ queryKey: ['sidebarTree', bucketName] });
   };
 
@@ -167,7 +177,7 @@ const BucketPage = () => {
         .eq("id", bucketDetails.id);
       if (error) throw error;
       showSuccess(`Bucket access level updated.`);
-      queryClient.invalidateQueries({ queryKey: ['bucketData', bucketName, currentPrefix] });
+      queryClient.invalidateQueries({ queryKey: ['bucketData', bucketName, currentPrefix, session?.user?.id] });
     } catch (err) {
       console.error(err);
       showError("Failed to update bucket privacy.");
@@ -192,7 +202,7 @@ const BucketPage = () => {
     dismissToast(loadingToast);
     showSuccess("Invitations sent.");
     setInviteEmails("");
-    queryClient.invalidateQueries({ queryKey: ['bucketData', bucketName, currentPrefix] });
+    queryClient.invalidateQueries({ queryKey: ['bucketData', bucketName, currentPrefix, session?.user?.id] });
     setIsInviting(false);
   };
 
@@ -202,7 +212,7 @@ const BucketPage = () => {
       const { data, error } = await supabase.rpc('remove_bucket_member', { p_bucket_id: bucketDetails.id, p_user_id_to_remove: userIdToRemove });
       if (error) throw error;
       showSuccess(data);
-      queryClient.invalidateQueries({ queryKey: ['bucketData', bucketName, currentPrefix] });
+      queryClient.invalidateQueries({ queryKey: ['bucketData', bucketName, currentPrefix, session?.user?.id] });
     } catch (err: any) {
       console.error(err);
       showError(err.message);
@@ -215,7 +225,7 @@ const BucketPage = () => {
       const { error } = await supabase.rpc('update_bucket_member_role', { p_bucket_id: bucketDetails.id, p_member_id: memberId, p_new_role: newRole });
       if (error) throw error;
       showSuccess("Member role updated.");
-      queryClient.invalidateQueries({ queryKey: ['bucketData', bucketName, currentPrefix] });
+      queryClient.invalidateQueries({ queryKey: ['bucketData', bucketName, currentPrefix, session?.user?.id] });
     } catch (err: any) {
       console.error(err);
       showError(err.message);
@@ -352,6 +362,7 @@ const BucketPage = () => {
                   <SelectContent>
                     <SelectItem value="private">Private</SelectItem>
                     <SelectItem value="read-only">Public Read-Only</SelectItem>
+                    <SelectItem value="read-write">Public Read/Write</SelectItem>
                   </SelectContent>
                 </Select>
               )}

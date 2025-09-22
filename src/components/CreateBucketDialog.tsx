@@ -29,7 +29,7 @@ import { showSuccess, showError } from "@/utils/toast";
 
 const formSchema = z.object({
   bucketName: z.string().min(3, "Bucket name must be at least 3 characters long."),
-  public_level: z.string().default("private"),
+  accessLevel: z.string().default("private"),
 });
 
 interface CreateBucketDialogProps {
@@ -45,7 +45,7 @@ export const CreateBucketDialog = ({ open, onOpenChange, onBucketCreated }: Crea
     resolver: zodResolver(formSchema),
     defaultValues: {
       bucketName: "",
-      public_level: "private",
+      accessLevel: "private",
     },
   });
 
@@ -61,18 +61,23 @@ export const CreateBucketDialog = ({ open, onOpenChange, onBucketCreated }: Crea
 
     setIsSubmitting(true);
     try {
+      // Step 1: Create the bucket in MinIO
       await s3Client.send(new CreateBucketCommand({ Bucket: values.bucketName }));
+      
+      // Step 2: Enable versioning
       await s3Client.send(new PutBucketVersioningCommand({
         Bucket: values.bucketName,
         VersioningConfiguration: { Status: "Enabled" },
       }));
 
+      // Step 3: Save metadata to Supabase
       const { error: supabaseError } = await supabase.from("buckets").insert({
         name: values.bucketName,
         owner_id: session.user.id,
-        public_level: values.public_level,
+        public_level: values.accessLevel, // Use the new form field name
       });
 
+      // If Supabase fails, roll back the MinIO bucket creation
       if (supabaseError) {
         console.error("Supabase insert failed, cleaning up MinIO bucket...");
         await s3Client.send(new DeleteBucketCommand({ Bucket: values.bucketName }));
@@ -117,7 +122,7 @@ export const CreateBucketDialog = ({ open, onOpenChange, onBucketCreated }: Crea
             />
             <FormField
               control={form.control}
-              name="public_level"
+              name="accessLevel"
               render={({ field }) => (
                 <FormItem className="space-y-3">
                   <FormLabel>Bucket Access Level</FormLabel>
@@ -134,6 +139,10 @@ export const CreateBucketDialog = ({ open, onOpenChange, onBucketCreated }: Crea
                       <FormItem className="flex items-center space-x-3 space-y-0">
                         <FormControl><RadioGroupItem value="read-only" /></FormControl>
                         <FormLabel className="font-normal">Public Read-Only</FormLabel>
+                      </FormItem>
+                      <FormItem className="flex items-center space-x-3 space-y-0">
+                        <FormControl><RadioGroupItem value="read-write" /></FormControl>
+                        <FormLabel className="font-normal">Public Read/Write</FormLabel>
                       </FormItem>
                     </RadioGroup>
                   </FormControl>

@@ -34,10 +34,15 @@ const App = () => (
               <Route path="/login" element={<Login />} />
               <Route path="/update-password" element={<UpdatePassword />} />
               
+              {/* Publicly accessible routes with layout */}
+              <Route element={<AppLayout />}>
+                <Route path="/bucket/:bucketName/*" element={<BucketPage />} />
+              </Route>
+
+              {/* Protected routes that require login */}
               <Route element={<ProtectedRoute />}>
                 <Route element={<AppLayout />}>
                   <Route path="/" element={<Index />} />
-                  <Route path="/bucket/:bucketName/*" element={<BucketPage />} />
                   <Route path="/search" element={<SearchPage />} />
                 </Route>
               </Route>

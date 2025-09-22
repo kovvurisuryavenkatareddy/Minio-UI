@@ -66,6 +66,17 @@ const BucketList = () => {
     fetchBuckets();
   }, [fetchBuckets]);
 
+  const getPublicLevelLabel = (level: string) => {
+    switch (level) {
+      case 'read-only':
+        return 'Public Read-Only';
+      case 'read-write':
+        return 'Public Read/Write';
+      default:
+        return 'Public';
+    }
+  };
+
   return (
     <>
       <Card className="w-full">
@@ -116,7 +127,7 @@ const BucketList = () => {
                       </Link>
                       {bucket.public_level !== 'private' ? (
                         <Badge variant="outline" className="flex items-center gap-1">
-                          <Globe className="h-3 w-3" /> Public {bucket.public_level === 'read-only' && 'Read-Only'}
+                          <Globe className="h-3 w-3" /> {getPublicLevelLabel(bucket.public_level)}
                         </Badge>
                       ) : (
                         <Badge variant="secondary" className="flex items-center gap-1">
