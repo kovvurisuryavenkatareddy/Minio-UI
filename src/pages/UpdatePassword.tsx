@@ -11,7 +11,12 @@ import { showSuccess, showError } from '@/utils/toast';
 import { useState } from 'react';
 
 const passwordSchema = z.object({
-  password: z.string().min(6, 'Password must be at least 6 characters long.'),
+  password: z.string()
+    .min(8, 'Password must be at least 8 characters long.')
+    .regex(/[a-z]/, 'Password must contain at least one lowercase letter.')
+    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter.')
+    .regex(/[0-9]/, 'Password must contain at least one number.')
+    .regex(/[^a-zA-Z0-9]/, 'Password must contain at least one special character.'),
   confirmPassword: z.string(),
 }).refine(data => data.password === data.confirmPassword, {
   message: "Passwords don't match",
@@ -32,15 +37,30 @@ const UpdatePassword = () => {
 
   const onSubmit = async (values: z.infer<typeof passwordSchema>) => {
     setIsSubmitting(true);
-    const { error } = await supabase.auth.updateUser({ password: values.password });
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
 
-    if (error) {
-      showError(error.message);
-    } else {
-      showSuccess('Password updated successfully! Please log in again.');
-      await supabase.auth.signOut();
-      navigate('/login');
+    if (userError || !user) {
+      showError("Could not identify user. Please try again.");
+      setIsSubmitting(false);
+      return;
     }
+
+    const { error: updateError } = await supabase.auth.updateUser({ password: values.password });
+
+    if (updateError) {
+      showError(updateError.message);
+      setIsSubmitting(false);
+      return;
+    }
+
+    // This will clear the flag for first-time users.
+    await supabase
+      .from('profiles')
+      .update({ requires_password_change: false })
+      .eq('id', user.id);
+
+    showSuccess('Password updated successfully!');
+    navigate('/');
     setIsSubmitting(false);
   };
 
@@ -49,7 +69,9 @@ const UpdatePassword = () => {
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>Update Your Password</CardTitle>
-          <CardDescription>Enter a new password for your account.</CardDescription>
+          <CardDescription>
+            Please choose a strong new password. It must be at least 8 characters long and include uppercase, lowercase, a number, and a special character.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>

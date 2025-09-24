@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './AuthContext';
 import { User } from '@supabase/supabase-js';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 export interface Profile {
   id: string;
@@ -9,6 +10,7 @@ export interface Profile {
   role: 'user' | 'admin';
   is_active: boolean;
   email?: string;
+  requires_password_change?: boolean;
 }
 
 interface ProfileContextType {
@@ -25,6 +27,8 @@ export const ProfileProvider = ({ children }: { children: React.ReactNode }) => 
   const { session } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     if (session?.user) {
@@ -39,8 +43,12 @@ export const ProfileProvider = ({ children }: { children: React.ReactNode }) => 
         if (error) {
           console.error('Error fetching profile:', error);
           setProfile(null);
-        } else {
-          setProfile({ ...data, email: user.email });
+        } else if (data) {
+          if (data.requires_password_change && location.pathname !== '/update-password') {
+            navigate('/update-password', { replace: true });
+          } else {
+            setProfile({ ...data, email: user.email });
+          }
         }
         setLoading(false);
       };
@@ -49,7 +57,7 @@ export const ProfileProvider = ({ children }: { children: React.ReactNode }) => 
       setProfile(null);
       setLoading(false);
     }
-  }, [session]);
+  }, [session, navigate, location.pathname]);
 
   return (
     <ProfileContext.Provider value={{ profile, loading }}>
