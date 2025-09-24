@@ -44,6 +44,7 @@ export const UserManagementTable = () => {
   const { data: users, isLoading, isError, error } = useQuery<Profile[]>({
     queryKey: ["allUsers"],
     queryFn: fetchUsers,
+    refetchOnWindowFocus: false,
   });
 
   const [isAddUserOpen, setAddUserOpen] = useState(false);
