@@ -35,6 +35,7 @@ const SidebarContent = ({ onClose }: { onClose?: () => void }) => {
       if (error) throw new Error(error.message);
       return data || [];
     },
+    refetchOnWindowFocus: false,
   });
 
   return (

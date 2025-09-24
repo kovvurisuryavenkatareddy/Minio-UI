@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { MoreVertical, UserPlus, AlertTriangle } from "lucide-react";
+import { MoreVertical, UserPlus, AlertTriangle, RefreshCw } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -41,7 +41,7 @@ const fetchUsers = async (): Promise<Profile[]> => {
 
 export const UserManagementTable = () => {
   const queryClient = useQueryClient();
-  const { data: users, isLoading, isError, error } = useQuery<Profile[]>({
+  const { data: users, isLoading, isError, error, isFetching } = useQuery<Profile[]>({
     queryKey: ["allUsers"],
     queryFn: fetchUsers,
     refetchOnWindowFocus: false,
@@ -55,7 +55,11 @@ export const UserManagementTable = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex justify-end space-x-2">
+        <Button variant="outline" onClick={refreshUsers} disabled={isFetching}>
+          <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
+          Refresh
+        </Button>
         <Button onClick={() => setAddUserOpen(true)}>
           <UserPlus className="mr-2 h-4 w-4" /> Add User
         </Button>
