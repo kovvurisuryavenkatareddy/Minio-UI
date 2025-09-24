@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import { useInView } from "react-intersection-observer";
 import { s3Client } from "@/lib/s3Client";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -9,10 +10,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardFooter,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import {
   Table,
@@ -46,11 +44,9 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Folder, File, AlertTriangle, Users, Trash2, Send, MoreVertical, FolderPlus, Eye, Download, FolderUp, RefreshCw, History, Share2 } from "lucide-react";
-import { showSuccess, showError, showLoading, dismissToast } from "@/utils/toast";
+import { Folder, File, AlertTriangle, Users, Trash2, MoreVertical, FolderPlus, Eye, Download, FolderUp, RefreshCw, History, Share2 } from "lucide-react";
+import { showSuccess, showError } from "@/utils/toast";
 import { CreateFolderDialog } from "@/components/CreateFolderDialog";
 import { UploadFileDialog } from "@/components/UploadFileDialog";
 import { DeleteObjectDialog } from "@/components/DeleteObjectDialog";
@@ -60,6 +56,7 @@ import { VersionHistoryDialog } from "@/components/VersionHistoryDialog";
 import { ShareFileDialog } from "@/components/ShareFileDialog";
 import { DeleteFolderDialog } from "@/components/DeleteFolderDialog";
 import { DeleteMultipleObjectsDialog } from "@/components/DeleteMultipleObjectsDialog";
+import { ManageAccessDialog } from "@/components/ManageAccessDialog";
 
 interface BucketDetails {
   id: string;
@@ -82,18 +79,19 @@ interface PreviewState {
   fileType: string;
 }
 
+const BUCKET_ITEMS_PER_PAGE = 50;
+
 const BucketPage = () => {
   const params = useParams();
   const navigate = useNavigate();
   const { session } = useAuth();
   const queryClient = useQueryClient();
+  const { ref, inView } = useInView();
 
   const bucketName = params.bucketName!;
   const currentPrefix = params['*'] || "";
 
-  const [inviteEmails, setInviteEmails] = useState("");
-  const [inviteRole, setInviteRole] = useState("read-only");
-  const [isInviting, setIsInviting] = useState(false);
+  const [isManageAccessOpen, setManageAccessOpen] = useState(false);
   const [isCreateFolderOpen, setCreateFolderOpen] = useState(false);
   const [isUploadFileOpen, setUploadFileOpen] = useState(false);
   const [isUploadFolderOpen, setUploadFolderOpen] = useState(false);
@@ -105,47 +103,68 @@ const BucketPage = () => {
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [isDeleteMultipleOpen, setDeleteMultipleOpen] = useState(false);
 
-  const fetchBucketData = async () => {
-    if (!bucketName || !s3Client) {
-      throw new Error("Client not initialized or bucket name is missing.");
-    }
-
-    const { data: bucketData, error: supabaseError } = await supabase
-      .from("buckets")
-      .select("id, owner_id, public_level")
-      .eq("name", bucketName)
-      .single();
-
-    if (supabaseError || !bucketData) {
-      throw new Error("Bucket not found or you don't have permission to view it.");
-    }
-
-    const s3Data = await s3Client.send(
-      new ListObjectsV2Command({ Bucket: bucketName, Prefix: currentPrefix, Delimiter: "/" })
-    );
-    
-    const folders: BucketItem[] = (s3Data.CommonPrefixes || []).map(p => ({ ...p, type: 'folder' }));
-    const files: BucketItem[] = (s3Data.Contents || []).filter(c => c.Key !== currentPrefix).map(c => ({ ...c, type: 'file' }));
-    const items = [...folders, ...files];
-
-    let memberData: BucketMember[] = [];
-    if (session) {
-      const { data, error: memberError } = await supabase.rpc('get_bucket_members', { p_bucket_id: bucketData.id });
-      if (memberError) console.error(`Failed to fetch members: ${memberError.message}`);
-      else memberData = data || [];
-    }
-    
-    return { bucketDetails: bucketData, items, members: memberData };
-  };
-
-  const { data, error, isLoading, isFetching, isError } = useQuery({
-    queryKey: ['bucketData', bucketName, currentPrefix, session?.user?.id],
-    queryFn: fetchBucketData,
-    refetchOnWindowFocus: false,
+  const { data: bucketInfo, isError: isBucketInfoError, error: bucketInfoError } = useQuery({
+    queryKey: ['bucketInfo', bucketName],
+    queryFn: async () => {
+      const { data: bucketData, error: supabaseError } = await supabase
+        .from("buckets")
+        .select("id, owner_id, public_level")
+        .eq("name", bucketName)
+        .single();
+      if (supabaseError || !bucketData) throw new Error("Bucket not found or you don't have permission to view it.");
+      
+      let memberData: BucketMember[] = [];
+      if (session) {
+        const { data, error: memberError } = await supabase.rpc('get_bucket_members', { p_bucket_id: bucketData.id });
+        if (memberError) console.error(`Failed to fetch members: ${memberError.message}`);
+        else memberData = data || [];
+      }
+      return { bucketDetails: bucketData, members: memberData };
+    },
     enabled: !!bucketName,
+    refetchOnWindowFocus: false,
   });
 
-  const { bucketDetails, items = [], members = [] } = data || {};
+  const {
+    data: itemsData,
+    error: itemsError,
+    isLoading: itemsIsLoading,
+    isFetching: itemsIsFetching,
+    isError: itemsIsError,
+    fetchNextPage,
+    hasNextPage,
+  } = useInfiniteQuery({
+      queryKey: ['bucketItems', bucketName, currentPrefix],
+      queryFn: async ({ pageParam }: { pageParam?: string }) => {
+          if (!s3Client) throw new Error("S3 client not initialized.");
+          const command = new ListObjectsV2Command({
+              Bucket: bucketName,
+              Prefix: currentPrefix,
+              Delimiter: "/",
+              MaxKeys: BUCKET_ITEMS_PER_PAGE,
+              ContinuationToken: pageParam,
+          });
+          const s3Data = await s3Client.send(command);
+          const folders: BucketItem[] = (s3Data.CommonPrefixes || []).map(p => ({ ...p, type: 'folder' }));
+          const files: BucketItem[] = (s3Data.Contents || []).filter(c => c.Key !== currentPrefix).map(c => ({ ...c, type: 'file' }));
+          return {
+              items: [...folders, ...files],
+              nextContinuationToken: s3Data.NextContinuationToken,
+          };
+      },
+      getNextPageParam: (lastPage) => lastPage.nextContinuationToken,
+      enabled: !!bucketName,
+      refetchOnWindowFocus: false,
+  });
+
+  useEffect(() => {
+    if (inView && hasNextPage) {
+      fetchNextPage();
+    }
+  }, [inView, hasNextPage, fetchNextPage]);
+
+  const { bucketDetails, members = [] } = bucketInfo || {};
+  const items = itemsData?.pages.flatMap(page => page.items) || [];
 
   const currentUserRole = useMemo(() => {
     if (!session) return null;
@@ -153,17 +172,13 @@ const BucketPage = () => {
   }, [members, session]);
 
   const canWrite = useMemo(() => {
-    if (bucketDetails?.public_level === 'read-write') {
-      return true;
-    }
-    if (session) {
-      return currentUserRole === 'owner' || currentUserRole === 'read-write';
-    }
+    if (bucketDetails?.public_level === 'read-write') return true;
+    if (session) return currentUserRole === 'owner' || currentUserRole === 'read-write';
     return false;
   }, [session, currentUserRole, bucketDetails]);
 
   const handleRefresh = () => {
-    queryClient.invalidateQueries({ queryKey: ['bucketData', bucketName, currentPrefix, session?.user?.id] });
+    queryClient.invalidateQueries({ queryKey: ['bucketItems', bucketName, currentPrefix] });
     queryClient.invalidateQueries({ queryKey: ['sidebarTree', bucketName] });
     queryClient.invalidateQueries({ queryKey: ["profile"] });
   };
@@ -175,64 +190,13 @@ const BucketPage = () => {
   const handlePrivacyChange = async (publicLevel: string) => {
     if (!bucketDetails) return;
     try {
-      const { error } = await supabase
-        .from("buckets")
-        .update({ public_level: publicLevel })
-        .eq("id", bucketDetails.id);
+      const { error } = await supabase.from("buckets").update({ public_level: publicLevel }).eq("id", bucketDetails.id);
       if (error) throw error;
       showSuccess(`Bucket access level updated.`);
-      queryClient.invalidateQueries({ queryKey: ['bucketData', bucketName, currentPrefix, session?.user?.id] });
+      queryClient.invalidateQueries({ queryKey: ['bucketInfo', bucketName] });
     } catch (err) {
       console.error(err);
       showError("Failed to update bucket privacy.");
-    }
-  };
-
-  const handleInvite = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inviteEmails || !bucketDetails) return;
-    const emails = inviteEmails.split(/[\n,;]+/).map(email => email.trim()).filter(Boolean);
-    if (emails.length === 0) return showError("Please enter at least one valid email address.");
-    setIsInviting(true);
-    const loadingToast = showLoading(`Inviting ${emails.length} user(s)...`);
-    for (const email of emails) {
-      try {
-        const { error } = await supabase.rpc('invite_user_to_bucket', { p_bucket_id: bucketDetails.id, p_user_email: email, p_role: inviteRole });
-        if (error) throw error;
-      } catch (err: any) {
-        showError(`Failed to invite ${email}: ${err.message}`);
-      }
-    }
-    dismissToast(loadingToast);
-    showSuccess("Invitations sent.");
-    setInviteEmails("");
-    queryClient.invalidateQueries({ queryKey: ['bucketData', bucketName, currentPrefix, session?.user?.id] });
-    setIsInviting(false);
-  };
-
-  const handleRemoveMember = async (userIdToRemove: string) => {
-    if (!bucketDetails) return;
-    try {
-      const { data, error } = await supabase.rpc('remove_bucket_member', { p_bucket_id: bucketDetails.id, p_user_id_to_remove: userIdToRemove });
-      if (error) throw error;
-      showSuccess(data);
-      queryClient.invalidateQueries({ queryKey: ['bucketData', bucketName, currentPrefix, session?.user?.id] });
-    } catch (err: any) {
-      console.error(err);
-      showError(err.message);
-    }
-  };
-
-  const handleRoleChange = async (memberId: string, newRole: string) => {
-    if (!bucketDetails) return;
-    try {
-      const { error } = await supabase.rpc('update_bucket_member_role', { p_bucket_id: bucketDetails.id, p_member_id: memberId, p_new_role: newRole });
-      if (error) throw error;
-      showSuccess("Member role updated.");
-      queryClient.invalidateQueries({ queryKey: ['bucketData', bucketName, currentPrefix, session?.user?.id] });
-    } catch (err: any) {
-      console.error(err);
-      showError(err.message);
     }
   };
 
@@ -280,31 +244,20 @@ const BucketPage = () => {
   }
 
   const isOwner = session?.user.id === bucketDetails?.owner_id;
-
   const fileItems = items.filter(item => item.type === 'file') as (_Object & { type: 'file' })[];
   const numSelected = selectedKeys.length;
   const numFiles = fileItems.length;
 
   const totalSizeToDelete = useMemo(() => {
-    return fileItems
-      .filter(f => selectedKeys.includes(f.Key!))
-      .reduce((sum, obj) => sum + (obj.Size || 0), 0);
+    return fileItems.filter(f => selectedKeys.includes(f.Key!)).reduce((sum, obj) => sum + (obj.Size || 0), 0);
   }, [fileItems, selectedKeys]);
 
   const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      setSelectedKeys(fileItems.map(file => file.Key!));
-    } else {
-      setSelectedKeys([]);
-    }
+    setSelectedKeys(checked ? fileItems.map(file => file.Key!) : []);
   };
 
   const handleSelectOne = (key: string, checked: boolean) => {
-    if (checked) {
-      setSelectedKeys(prev => [...prev, key]);
-    } else {
-      setSelectedKeys(prev => prev.filter(k => k !== key));
-    }
+    setSelectedKeys(prev => checked ? [...prev, key] : prev.filter(k => k !== key));
   };
 
   const renderBreadcrumbs = () => {
@@ -312,24 +265,14 @@ const BucketPage = () => {
     return (
       <Breadcrumb>
         <BreadcrumbList>
-          <BreadcrumbItem>
-            <BreadcrumbLink className="cursor-pointer" onClick={() => navigate(`/bucket/${bucketName}`)}>
-              {bucketName}
-            </BreadcrumbLink>
-          </BreadcrumbItem>
+          <BreadcrumbItem><BreadcrumbLink className="cursor-pointer" onClick={() => navigate(`/bucket/${bucketName}`)}>{bucketName}</BreadcrumbLink></BreadcrumbItem>
           {parts.map((part, index) => {
             const path = parts.slice(0, index + 1).join('/');
             return (
               <React.Fragment key={path}>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
-                  {index === parts.length - 1 ? (
-                    <BreadcrumbPage>{part}</BreadcrumbPage>
-                  ) : (
-                    <BreadcrumbLink className="cursor-pointer" onClick={() => navigate(`/bucket/${bucketName}/${path}/`)}>
-                      {part}
-                    </BreadcrumbLink>
-                  )}
+                  {index === parts.length - 1 ? <BreadcrumbPage>{part}</BreadcrumbPage> : <BreadcrumbLink className="cursor-pointer" onClick={() => navigate(`/bucket/${bucketName}/${path}/`)}>{part}</BreadcrumbLink>}
                 </BreadcrumbItem>
               </React.Fragment>
             );
@@ -339,14 +282,13 @@ const BucketPage = () => {
     );
   };
 
-  if (isLoading) {
+  if (itemsIsLoading || !bucketInfo) {
     return <div className="space-y-4"><Skeleton className="h-8 w-1/2" /><Skeleton className="h-96 w-full" /></div>;
   }
 
-  if (isError) {
-    return (
-      <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Error</AlertTitle><AlertDescription>{(error as Error).message}</AlertDescription></Alert>
-    );
+  if (isBucketInfoError || itemsIsError) {
+    const error = bucketInfoError || itemsError;
+    return <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Error</AlertTitle><AlertDescription>{(error as Error).message}</AlertDescription></Alert>;
   }
 
   return (
@@ -354,167 +296,52 @@ const BucketPage = () => {
       <Card>
         <CardHeader>
           <div className="flex justify-between items-start">
-            <div>
-              {renderBreadcrumbs()}
-            </div>
+            <div>{renderBreadcrumbs()}</div>
             <div className="flex items-center space-x-2">
-              {canWrite && numSelected > 0 && (
-                <Button variant="destructive" size="sm" onClick={() => setDeleteMultipleOpen(true)}>
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete ({numSelected})
-                </Button>
-              )}
-              {isOwner && bucketDetails && (
-                <Select value={bucketDetails.public_level} onValueChange={handlePrivacyChange}>
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="Set access level" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="private">Private</SelectItem>
-                    <SelectItem value="read-only">Public Read-Only</SelectItem>
-                    <SelectItem value="read-write">Public Read/Write</SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
-              <Button variant="outline" size="icon" onClick={handleRefresh} disabled={isFetching}>
-                <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-              </Button>
-              {canWrite && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button>Actions</Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent>
-                    <DropdownMenuItem onClick={() => setUploadFileOpen(true)}>
-                      <File className="mr-2 h-4 w-4" /> Upload Files
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setUploadFolderOpen(true)}>
-                      <FolderUp className="mr-2 h-4 w-4" /> Upload Folder
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setCreateFolderOpen(true)}>
-                      <FolderPlus className="mr-2 h-4 w-4" /> Create Folder
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
+              {canWrite && numSelected > 0 && <Button variant="destructive" size="sm" onClick={() => setDeleteMultipleOpen(true)}><Trash2 className="mr-2 h-4 w-4" />Delete ({numSelected})</Button>}
+              {isOwner && bucketDetails && <Select value={bucketDetails.public_level} onValueChange={handlePrivacyChange}><SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="private">Private</SelectItem><SelectItem value="read-only">Public Read-Only</SelectItem><SelectItem value="read-write">Public Read/Write</SelectItem></SelectContent></Select>}
+              {isOwner && <Button variant="outline" onClick={() => setManageAccessOpen(true)}><Users className="mr-2 h-4 w-4" /> Manage Access</Button>}
+              <Button variant="outline" size="icon" onClick={handleRefresh} disabled={itemsIsFetching}><RefreshCw className={`h-4 w-4 ${itemsIsFetching ? 'animate-spin' : ''}`} /></Button>
+              {canWrite && <DropdownMenu><DropdownMenuTrigger asChild><Button>Actions</Button></DropdownMenuTrigger><DropdownMenuContent><DropdownMenuItem onClick={() => setUploadFileOpen(true)}><File className="mr-2 h-4 w-4" /> Upload Files</DropdownMenuItem><DropdownMenuItem onClick={() => setUploadFolderOpen(true)}><FolderUp className="mr-2 h-4 w-4" /> Upload Folder</DropdownMenuItem><DropdownMenuItem onClick={() => setCreateFolderOpen(true)}><FolderPlus className="mr-2 h-4 w-4" /> Create Folder</DropdownMenuItem></DropdownMenuContent></DropdownMenu>}
             </div>
           </div>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader><TableRow>
-              {canWrite && <TableHead className="w-[40px]">
-                <Checkbox
-                  checked={numFiles > 0 && numSelected === numFiles ? true : numSelected > 0 ? 'indeterminate' : false}
-                  onCheckedChange={(checked) => handleSelectAll(!!checked)}
-                  aria-label="Select all rows"
-                  disabled={numFiles === 0}
-                />
-              </TableHead>}
+              {canWrite && <TableHead className="w-[40px]"><Checkbox checked={numFiles > 0 && numSelected === numFiles ? true : numSelected > 0 ? 'indeterminate' : false} onCheckedChange={(checked) => handleSelectAll(!!checked)} disabled={numFiles === 0} /></TableHead>}
               <TableHead>Name</TableHead><TableHead>Size</TableHead><TableHead>Last Modified</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
             <TableBody>
               {items.length > 0 ? (
                 items.map((item) => {
                   const name = item.type === 'folder' ? item.Prefix?.replace(currentPrefix, '').replace('/', '') : item.Key?.replace(currentPrefix, '');
                   return (
-                    <TableRow 
-                      key={item.type === 'folder' ? item.Prefix : item.Key}
-                      onDoubleClick={() => {
-                        if (item.type === 'folder' && item.Prefix) {
-                          navigate(`/bucket/${bucketName}/${item.Prefix}`);
-                        }
-                      }}
-                      className={item.type === 'folder' ? 'cursor-pointer hover:bg-muted/50' : ''}
-                    >
-                      {canWrite && <TableCell>
-                        {item.type === 'file' && item.Key ? (
-                          <Checkbox
-                            checked={selectedKeys.includes(item.Key)}
-                            onCheckedChange={(checked) => handleSelectOne(item.Key!, !!checked)}
-                            aria-label={`Select row for ${name}`}
-                          />
-                        ) : null}
-                      </TableCell>}
-                      <TableCell className="font-medium flex items-center">
-                        {item.type === 'folder' ? <Folder className="mr-2 h-4 w-4 text-blue-500" /> : <File className="mr-2 h-4 w-4 text-muted-foreground" />}
-                        <span>{name}</span>
-                      </TableCell>
+                    <TableRow key={item.type === 'folder' ? item.Prefix : item.Key} onDoubleClick={() => { if (item.type === 'folder' && item.Prefix) navigate(`/bucket/${bucketName}/${item.Prefix}`); }} className={item.type === 'folder' ? 'cursor-pointer hover:bg-muted/50' : ''}>
+                      {canWrite && <TableCell>{item.type === 'file' && item.Key ? <Checkbox checked={selectedKeys.includes(item.Key)} onCheckedChange={(checked) => handleSelectOne(item.Key!, !!checked)} /> : null}</TableCell>}
+                      <TableCell className="font-medium flex items-center">{item.type === 'folder' ? <Folder className="mr-2 h-4 w-4 text-blue-500" /> : <File className="mr-2 h-4 w-4 text-muted-foreground" />}<span>{name}</span></TableCell>
                       <TableCell>{item.type === 'file' ? formatBytes(item.Size) : '-'}</TableCell>
                       <TableCell>{item.type === 'file' ? item.LastModified?.toLocaleString() : '-'}</TableCell>
                       <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4" /></Button></DropdownMenuTrigger>
                           <DropdownMenuContent>
-                            {item.type === 'file' && item.Key && (
-                              <>
+                            {item.type === 'file' && item.Key && (<>
                                 <DropdownMenuItem onClick={() => handlePreview(item.Key!)}><Eye className="mr-2 h-4 w-4" /> Preview</DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleDownload(item.Key!)}><Download className="mr-2 h-4 w-4" /> Download</DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => setObjectToShare(item.Key!)}><Share2 className="mr-2 h-4 w-4" /> Share</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => setHistoryTarget(item.Key!)}><History className="mr-2 h-4 w-4" /> Version History</DropdownMenuItem>
-                              </>
-                            )}
-                            {canWrite && (
-                              <DropdownMenuItem className="text-destructive" onClick={() => item.type === 'file' ? setObjectToDelete({ key: item.Key!, size: (item as _Object).Size || 0 }) : setFolderToDelete(item.Prefix!)}>
-                                <Trash2 className="mr-2 h-4 w-4" /> Delete
-                              </DropdownMenuItem>
-                            )}
+                                <DropdownMenuItem onClick={() => setHistoryTarget(item.Key!)}><History className="mr-2 h-4 w-4" /> Version History</DropdownMenuItem></>)}
+                            {canWrite && <DropdownMenuItem className="text-destructive" onClick={() => item.type === 'file' ? setObjectToDelete({ key: item.Key!, size: (item as _Object).Size || 0 }) : setFolderToDelete(item.Prefix!)}><Trash2 className="mr-2 h-4 w-4" /> Delete</DropdownMenuItem>}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
                     </TableRow>
                   );
                 })
-              ) : (
-                <TableRow><TableCell colSpan={canWrite ? 5 : 4} className="text-center py-8 text-muted-foreground">This folder is empty.</TableCell></TableRow>
-              )}
+              ) : <TableRow><TableCell colSpan={canWrite ? 5 : 4} className="text-center py-8 text-muted-foreground">This folder is empty.</TableCell></TableRow>}
+              {hasNextPage && <TableRow ref={ref}><TableCell colSpan={canWrite ? 5 : 4}><div className="flex justify-center"><Skeleton className="h-8 w-full" /></div></TableCell></TableRow>}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
-
-      {isOwner && (
-        <Card>
-          <CardHeader><CardTitle className="flex items-center"><Users className="mr-2 h-5 w-5" />Manage Access</CardTitle><CardDescription>Invite users and manage roles for this private bucket.</CardDescription></CardHeader>
-          <CardContent className="space-y-2">
-            {members.map(member => (
-              <div key={member.user_id} className="flex items-center justify-between rounded-md border p-3 text-sm">
-                <div className="flex items-center gap-3"><span className="font-medium">{member.email}</span><Badge variant={member.is_owner ? "default" : "secondary"}>{member.role}</Badge></div>
-                <div className="flex items-center gap-2">
-                  {!member.is_owner && (
-                    <>
-                      <Select value={member.role} onValueChange={(newRole) => handleRoleChange(member.user_id, newRole)}>
-                        <SelectTrigger className="w-[130px] h-9">
-                          <SelectValue/>
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="read-only">Read-Only</SelectItem>
-                          <SelectItem value="read-write">Read/Write</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Button variant="ghost" size="icon" onClick={() => handleRemoveMember(member.user_id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                    </>
-                  )}
-                </div>
-              </div>
-            ))}
-          </CardContent>
-          <CardFooter>
-            <form onSubmit={handleInvite} className="flex w-full items-start space-x-2">
-              <Textarea placeholder="Enter emails separated by commas or new lines." value={inviteEmails} onChange={(e) => setInviteEmails(e.target.value)} required />
-              <Select value={inviteRole} onValueChange={setInviteRole}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Select a role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="read-only">Read-Only</SelectItem>
-                  <SelectItem value="read-write">Read/Write</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button type="submit" disabled={isInviting}><Send className="mr-2 h-4 w-4" />{isInviting ? 'Inviting...' : 'Invite'}</Button>
-            </form>
-          </CardFooter>
-        </Card>
-      )}
 
       {bucketName && canWrite && <CreateFolderDialog open={isCreateFolderOpen} onOpenChange={setCreateFolderOpen} onFolderCreated={handleFolderCreated} bucketName={bucketName} currentPrefix={currentPrefix} />}
       {bucketName && canWrite && <UploadFileDialog open={isUploadFileOpen} onOpenChange={setUploadFileOpen} onUploadComplete={handleRefresh} bucketName={bucketName} currentPrefix={currentPrefix} />}
@@ -525,6 +352,7 @@ const BucketPage = () => {
       {bucketName && objectToShare && <ShareFileDialog open={!!objectToShare} onOpenChange={() => setObjectToShare(null)} bucketName={bucketName} objectKey={objectToShare} />}
       {bucketName && folderToDelete && <DeleteFolderDialog open={!!folderToDelete} onOpenChange={() => setFolderToDelete(null)} onFolderDeleted={handleRefresh} bucketName={bucketName} folderPrefix={folderToDelete} />}
       {bucketName && isDeleteMultipleOpen && <DeleteMultipleObjectsDialog open={isDeleteMultipleOpen} onOpenChange={setDeleteMultipleOpen} onObjectsDeleted={() => { handleRefresh(); setSelectedKeys([]); }} bucketName={bucketName} objectKeys={selectedKeys} totalSize={totalSizeToDelete} />}
+      {bucketDetails && <ManageAccessDialog open={isManageAccessOpen} onOpenChange={setManageAccessOpen} bucketDetails={bucketDetails} members={members} bucketName={bucketName} />}
     </div>
   );
 };

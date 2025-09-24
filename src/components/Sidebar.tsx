@@ -1,5 +1,7 @@
+import React from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInView } from "react-intersection-observer";
 import { supabase } from "@/integrations/supabase/client";
 import { HardDrive, ChevronRight, Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -22,21 +24,42 @@ interface SidebarProps {
   onClose: () => void;
 }
 
+const BUCKETS_PER_PAGE = 30;
+
 const SidebarContent = ({ onClose }: { onClose?: () => void }) => {
   const params = useParams();
   const location = useLocation();
   const activeBucketName = params.bucketName;
   const { profile } = useProfile();
+  const { ref, inView } = useInView();
 
-  const { data: buckets, isLoading } = useQuery<Bucket[]>({
-    queryKey: ["allBuckets"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("buckets").select("id, name");
+  const {
+    data,
+    isLoading,
+    fetchNextPage,
+    hasNextPage,
+  } = useInfiniteQuery<Bucket[]>({
+    queryKey: ["allBucketsPaginated"],
+    queryFn: async ({ pageParam = 0 }) => {
+      const from = pageParam * BUCKETS_PER_PAGE;
+      const to = from + BUCKETS_PER_PAGE - 1;
+      const { data, error } = await supabase.from("buckets").select("id, name").range(from, to);
       if (error) throw new Error(error.message);
       return data || [];
     },
+    getNextPageParam: (lastPage, allPages) => {
+      return lastPage.length === BUCKETS_PER_PAGE ? allPages.length : undefined;
+    },
     refetchOnWindowFocus: false,
   });
+
+  React.useEffect(() => {
+    if (inView && hasNextPage) {
+      fetchNextPage();
+    }
+  }, [inView, hasNextPage, fetchNextPage]);
+
+  const buckets = data?.pages.flat() || [];
 
   return (
     <div className="h-full flex flex-col">
@@ -120,6 +143,11 @@ const SidebarContent = ({ onClose }: { onClose?: () => void }) => {
                 </Collapsible>
               </li>
             ))
+          )}
+          {hasNextPage && (
+            <li ref={ref} className="px-6 py-3">
+              <Skeleton className="h-6 w-full" />
+            </li>
           )}
         </ul>
       </div>
