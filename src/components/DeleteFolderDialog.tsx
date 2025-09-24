@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { s3Client } from "@/lib/s3Client";
+import { supabase } from "@/integrations/supabase/client";
 import { ListObjectsV2Command, DeleteObjectsCommand } from "@aws-sdk/client-s3";
 import {
   AlertDialog,
@@ -32,7 +33,6 @@ export const DeleteFolderDialog = ({ bucketName, folderPrefix, open, onOpenChang
     }
     setIsDeleting(true);
     try {
-      // List all objects with the given prefix
       const listCommand = new ListObjectsV2Command({ Bucket: bucketName, Prefix: folderPrefix });
       const listedObjects = await s3Client.send(listCommand);
 
@@ -43,7 +43,8 @@ export const DeleteFolderDialog = ({ bucketName, folderPrefix, open, onOpenChang
         return;
       }
 
-      // Prepare for batch deletion
+      const totalSize = listedObjects.Contents.reduce((sum, obj) => sum + (obj.Size || 0), 0);
+
       const deleteParams = {
         Bucket: bucketName,
         Delete: {
@@ -51,8 +52,15 @@ export const DeleteFolderDialog = ({ bucketName, folderPrefix, open, onOpenChang
         },
       };
 
-      // Delete the objects
       await s3Client.send(new DeleteObjectsCommand(deleteParams));
+
+      if (totalSize > 0) {
+        const { error } = await supabase.rpc('adjust_space_used', { space_change: -totalSize });
+        if (error) {
+          console.error("Failed to update space usage:", error);
+          showError("Folder deleted, but failed to update space usage.");
+        }
+      }
 
       showSuccess(`Folder "${folderPrefix.split('/').slice(-2, -1)[0]}" and its contents deleted successfully.`);
       onFolderDeleted();

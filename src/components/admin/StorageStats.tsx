@@ -3,8 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { AlertTriangle, Users, HardDrive, Database } from "lucide-react";
-import { Progress } from "../ui/progress";
+import { AlertTriangle, Users, Database } from "lucide-react";
 
 const formatBytes = (bytes: number, decimals = 2) => {
   if (!bytes || bytes === 0) return '0 Bytes';
@@ -26,39 +25,27 @@ export const StorageStats = () => {
   });
 
   if (isLoading) {
-    return <div className="grid gap-4 md:grid-cols-3"><Skeleton className="h-32" /><Skeleton className="h-32" /><Skeleton className="h-32" /></div>;
+    return <div className="grid gap-4 md:grid-cols-2"><Skeleton className="h-32" /><Skeleton className="h-32" /></div>;
   }
 
   if (isError) {
     return <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Error</AlertTitle><AlertDescription>{(error as Error).message}</AlertDescription></Alert>;
   }
 
-  const { total_allocated, total_used, user_count } = data;
-  const overallUsagePercent = total_allocated > 0 ? (total_used / total_allocated) * 100 : 0;
+  const { total_used, user_count } = data;
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Total Users</CardTitle><Users className="h-4 w-4 text-muted-foreground" /></CardHeader>
           <CardContent><div className="text-2xl font-bold">{user_count}</div></CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Total Allocated</CardTitle><HardDrive className="h-4 w-4 text-muted-foreground" /></CardHeader>
-          <CardContent><div className="text-2xl font-bold">{formatBytes(total_allocated)}</div></CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Total Used</CardTitle><Database className="h-4 w-4 text-muted-foreground" /></CardHeader>
           <CardContent><div className="text-2xl font-bold">{formatBytes(total_used)}</div></CardContent>
         </Card>
       </div>
-      <Card>
-        <CardHeader><CardTitle>Overall Storage Usage</CardTitle></CardHeader>
-        <CardContent>
-          <Progress value={overallUsagePercent} className="w-full" />
-          <p className="text-center text-sm text-muted-foreground mt-2">{overallUsagePercent.toFixed(2)}% used</p>
-        </CardContent>
-      </Card>
     </div>
   );
 };

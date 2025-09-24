@@ -1,8 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Users, DatabaseZap, BarChart3 } from "lucide-react";
+import { Users, BarChart3 } from "lucide-react";
 import { UserManagementTable } from "@/components/admin/UserManagementTable";
-import { SpaceRequestTable } from "@/components/admin/SpaceRequestTable";
 import { StorageStats } from "@/components/admin/StorageStats";
 
 const AdminDashboard = () => {
@@ -11,9 +10,8 @@ const AdminDashboard = () => {
       <h1 className="text-3xl font-bold">Admin Dashboard</h1>
       
       <Tabs defaultValue="users">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="users"><Users className="mr-2 h-4 w-4" /> User Management</TabsTrigger>
-          <TabsTrigger value="requests"><DatabaseZap className="mr-2 h-4 w-4" /> Space Requests</TabsTrigger>
           <TabsTrigger value="stats"><BarChart3 className="mr-2 h-4 w-4" /> Storage Stats</TabsTrigger>
         </TabsList>
         <TabsContent value="users">
@@ -24,17 +22,6 @@ const AdminDashboard = () => {
             </CardHeader>
             <CardContent>
               <UserManagementTable />
-            </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="requests">
-          <Card>
-            <CardHeader>
-              <CardTitle>Space Requests</CardTitle>
-              <CardDescription>Approve or reject user requests for more storage.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <SpaceRequestTable />
             </CardContent>
           </Card>
         </TabsContent>

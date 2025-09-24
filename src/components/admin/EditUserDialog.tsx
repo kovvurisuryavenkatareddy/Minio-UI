@@ -20,7 +20,6 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -35,7 +34,6 @@ import { Profile } from "@/contexts/ProfileContext";
 const formSchema = z.object({
   role: z.enum(["user", "admin"]),
   is_active: z.boolean(),
-  space_limit: z.coerce.number().min(0, "Space limit cannot be negative."),
 });
 
 interface EditUserDialogProps {
@@ -56,7 +54,6 @@ export const EditUserDialog = ({ user, open, onOpenChange, onUserUpdated }: Edit
       form.reset({
         role: user.role,
         is_active: user.is_active,
-        space_limit: user.space_limit,
       });
     }
   }, [user, form]);
@@ -87,7 +84,7 @@ export const EditUserDialog = ({ user, open, onOpenChange, onUserUpdated }: Edit
         <DialogHeader>
           <DialogTitle>Edit User: {user?.email}</DialogTitle>
           <DialogDescription>
-            Update the user's role, status, and storage limit.
+            Update the user's role and status.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -102,17 +99,6 @@ export const EditUserDialog = ({ user, open, onOpenChange, onUserUpdated }: Edit
                     <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                     <SelectContent><SelectItem value="user">User</SelectItem><SelectItem value="admin">Admin</SelectItem></SelectContent>
                   </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="space_limit"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Space Limit (in bytes)</FormLabel>
-                  <FormControl><Input type="number" {...field} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )}

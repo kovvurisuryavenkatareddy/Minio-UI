@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { s3Client } from "@/lib/s3Client";
+import { supabase } from "@/integrations/supabase/client";
 import { ListObjectVersionsCommand, CopyObjectCommand, DeleteObjectCommand, GetObjectCommand, ObjectVersion } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import {
@@ -50,7 +51,6 @@ export const VersionHistoryDialog = ({ bucketName, objectKey, open, onOpenChange
     try {
       const command = new ListObjectVersionsCommand({ Bucket: bucketName, Prefix: objectKey });
       const data = await s3Client.send(command);
-      // Filter out delete markers and sort by last modified date descending
       const sortedVersions = (data.Versions || []).sort((a, b) => 
         (b.LastModified?.getTime() || 0) - (a.LastModified?.getTime() || 0)
       );
@@ -71,6 +71,12 @@ export const VersionHistoryDialog = ({ bucketName, objectKey, open, onOpenChange
   }, [fetchVersions]);
 
   const handleRestore = async (versionId: string) => {
+    const versionToRestore = versions.find(v => v.VersionId === versionId);
+    if (!versionToRestore) {
+      return showError("Could not find version details to restore.");
+    }
+    const size = versionToRestore.Size || 0;
+
     const loadingToast = showLoading("Restoring version...");
     try {
       const command = new CopyObjectCommand({
@@ -79,6 +85,15 @@ export const VersionHistoryDialog = ({ bucketName, objectKey, open, onOpenChange
         CopySource: `${bucketName}/${objectKey}?versionId=${versionId}`,
       });
       await s3Client.send(command);
+
+      if (size > 0) {
+        const { error: rpcError } = await supabase.rpc('adjust_space_used', { space_change: size });
+        if (rpcError) {
+          console.error("Failed to update space usage:", rpcError);
+          showError("Version restored, but failed to update space usage.");
+        }
+      }
+
       dismissToast(loadingToast);
       showSuccess("Version restored successfully. The file list will refresh.");
       onVersionRestored();
@@ -107,13 +122,28 @@ export const VersionHistoryDialog = ({ bucketName, objectKey, open, onOpenChange
   };
 
   const handleDelete = async (versionId: string) => {
-     const loadingToast = showLoading("Deleting version...");
+    const versionToDelete = versions.find(v => v.VersionId === versionId);
+    if (!versionToDelete) {
+      return showError("Could not find version details to delete.");
+    }
+    const size = versionToDelete.Size || 0;
+
+    const loadingToast = showLoading("Deleting version...");
     try {
       const command = new DeleteObjectCommand({ Bucket: bucketName, Key: objectKey, VersionId: versionId });
       await s3Client.send(command);
+
+      if (size > 0) {
+        const { error: rpcError } = await supabase.rpc('adjust_space_used', { space_change: -size });
+        if (rpcError) {
+          console.error("Failed to update space usage:", rpcError);
+          showError("Version deleted, but failed to update space usage.");
+        }
+      }
+
       dismissToast(loadingToast);
       showSuccess("Version permanently deleted.");
-      fetchVersions(); // Refresh the list
+      fetchVersions();
     } catch (err: any) {
       dismissToast(loadingToast);
       console.error(err);

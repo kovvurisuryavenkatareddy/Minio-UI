@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { s3Client } from "@/lib/s3Client";
+import { supabase } from "@/integrations/supabase/client";
 import { DeleteObjectsCommand } from "@aws-sdk/client-s3";
 import {
   AlertDialog,
@@ -17,12 +18,13 @@ import { showSuccess, showError } from "@/utils/toast";
 interface DeleteMultipleObjectsDialogProps {
   bucketName: string;
   objectKeys: string[];
+  totalSize: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onObjectsDeleted: () => void;
 }
 
-export const DeleteMultipleObjectsDialog = ({ bucketName, objectKeys, open, onOpenChange, onObjectsDeleted }: DeleteMultipleObjectsDialogProps) => {
+export const DeleteMultipleObjectsDialog = ({ bucketName, objectKeys, totalSize, open, onOpenChange, onObjectsDeleted }: DeleteMultipleObjectsDialogProps) => {
   const [isDeleting, setIsDeleting] = useState(false);
 
   const handleDelete = async () => {
@@ -37,8 +39,6 @@ export const DeleteMultipleObjectsDialog = ({ bucketName, objectKeys, open, onOp
 
     setIsDeleting(true);
     try {
-      // S3 DeleteObjects can handle up to 1000 objects per request.
-      // We'll chunk the requests if necessary.
       for (let i = 0; i < objectKeys.length; i += 1000) {
         const chunk = objectKeys.slice(i, i + 1000);
         const deleteParams = {
@@ -48,6 +48,14 @@ export const DeleteMultipleObjectsDialog = ({ bucketName, objectKeys, open, onOp
           },
         };
         await s3Client.send(new DeleteObjectsCommand(deleteParams));
+      }
+
+      if (totalSize > 0) {
+        const { error } = await supabase.rpc('adjust_space_used', { space_change: -totalSize });
+        if (error) {
+          console.error("Failed to update space usage:", error);
+          showError("Files deleted, but failed to update space usage.");
+        }
       }
 
       showSuccess(`${objectKeys.length} file(s) deleted successfully.`);

@@ -49,7 +49,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Folder, File, AlertTriangle, Users, Trash2, Send, MoreVertical, FolderPlus, Eye, Download, FolderUp, RefreshCw, History, Share2, Edit } from "lucide-react";
+import { Folder, File, AlertTriangle, Users, Trash2, Send, MoreVertical, FolderPlus, Eye, Download, FolderUp, RefreshCw, History, Share2 } from "lucide-react";
 import { showSuccess, showError, showLoading, dismissToast } from "@/utils/toast";
 import { CreateFolderDialog } from "@/components/CreateFolderDialog";
 import { UploadFileDialog } from "@/components/UploadFileDialog";
@@ -97,7 +97,7 @@ const BucketPage = () => {
   const [isCreateFolderOpen, setCreateFolderOpen] = useState(false);
   const [isUploadFileOpen, setUploadFileOpen] = useState(false);
   const [isUploadFolderOpen, setUploadFolderOpen] = useState(false);
-  const [objectToDelete, setObjectToDelete] = useState<string | null>(null);
+  const [objectToDelete, setObjectToDelete] = useState<{ key: string; size: number } | null>(null);
   const [folderToDelete, setFolderToDelete] = useState<string | null>(null);
   const [previewState, setPreviewState] = useState<PreviewState | null>(null);
   const [historyTarget, setHistoryTarget] = useState<string | null>(null);
@@ -153,21 +153,19 @@ const BucketPage = () => {
   }, [members, session]);
 
   const canWrite = useMemo(() => {
-    // First, check for public write access. Anyone can write.
     if (bucketDetails?.public_level === 'read-write') {
       return true;
     }
-    // If not public write, check for authenticated user with specific roles.
     if (session) {
       return currentUserRole === 'owner' || currentUserRole === 'read-write';
     }
-    // Otherwise, no write access.
     return false;
   }, [session, currentUserRole, bucketDetails]);
 
   const handleRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ['bucketData', bucketName, currentPrefix, session?.user?.id] });
     queryClient.invalidateQueries({ queryKey: ['sidebarTree', bucketName] });
+    queryClient.invalidateQueries({ queryKey: ["profile"] });
   };
 
   const handleFolderCreated = (newFolderKey: string) => {
@@ -242,7 +240,7 @@ const BucketPage = () => {
     if (!s3Client || !bucketName) return null;
     try {
       const command = new GetObjectCommand({ Bucket: bucketName, Key: key });
-      return await getSignedUrl(s3Client, command, { expiresIn: 3600 }); // 1 hour
+      return await getSignedUrl(s3Client, command, { expiresIn: 3600 });
     } catch (err) {
       console.error("Error creating presigned URL", err);
       showError("Could not generate link for file.");
@@ -286,6 +284,12 @@ const BucketPage = () => {
   const fileItems = items.filter(item => item.type === 'file') as (_Object & { type: 'file' })[];
   const numSelected = selectedKeys.length;
   const numFiles = fileItems.length;
+
+  const totalSizeToDelete = useMemo(() => {
+    return fileItems
+      .filter(f => selectedKeys.includes(f.Key!))
+      .reduce((sum, obj) => sum + (obj.Size || 0), 0);
+  }, [fileItems, selectedKeys]);
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
@@ -450,7 +454,7 @@ const BucketPage = () => {
                               </>
                             )}
                             {canWrite && (
-                              <DropdownMenuItem className="text-destructive" onClick={() => item.type === 'file' ? setObjectToDelete(item.Key!) : setFolderToDelete(item.Prefix!)}>
+                              <DropdownMenuItem className="text-destructive" onClick={() => item.type === 'file' ? setObjectToDelete({ key: item.Key!, size: (item as _Object).Size || 0 }) : setFolderToDelete(item.Prefix!)}>
                                 <Trash2 className="mr-2 h-4 w-4" /> Delete
                               </DropdownMenuItem>
                             )}
@@ -515,12 +519,12 @@ const BucketPage = () => {
       {bucketName && canWrite && <CreateFolderDialog open={isCreateFolderOpen} onOpenChange={setCreateFolderOpen} onFolderCreated={handleFolderCreated} bucketName={bucketName} currentPrefix={currentPrefix} />}
       {bucketName && canWrite && <UploadFileDialog open={isUploadFileOpen} onOpenChange={setUploadFileOpen} onUploadComplete={handleRefresh} bucketName={bucketName} currentPrefix={currentPrefix} />}
       {bucketName && canWrite && <UploadFolderDialog open={isUploadFolderOpen} onOpenChange={setUploadFolderOpen} onUploadComplete={handleRefresh} bucketName={bucketName} currentPrefix={currentPrefix} />}
-      {bucketName && objectToDelete && <DeleteObjectDialog open={!!objectToDelete} onOpenChange={() => setObjectToDelete(null)} onObjectDeleted={handleRefresh} bucketName={bucketName} objectKey={objectToDelete} />}
+      {bucketName && objectToDelete && <DeleteObjectDialog open={!!objectToDelete} onOpenChange={() => setObjectToDelete(null)} onObjectDeleted={handleRefresh} bucketName={bucketName} objectKey={objectToDelete.key} objectSize={objectToDelete.size} />}
       {previewState && <PreviewFileDialog {...previewState} open={!!previewState} onOpenChange={() => setPreviewState(null)} />}
       {bucketName && historyTarget && <VersionHistoryDialog open={!!historyTarget} onOpenChange={() => setHistoryTarget(null)} onVersionRestored={handleRefresh} bucketName={bucketName} objectKey={historyTarget} />}
       {bucketName && objectToShare && <ShareFileDialog open={!!objectToShare} onOpenChange={() => setObjectToShare(null)} bucketName={bucketName} objectKey={objectToShare} />}
       {bucketName && folderToDelete && <DeleteFolderDialog open={!!folderToDelete} onOpenChange={() => setFolderToDelete(null)} onFolderDeleted={handleRefresh} bucketName={bucketName} folderPrefix={folderToDelete} />}
-      {bucketName && isDeleteMultipleOpen && <DeleteMultipleObjectsDialog open={isDeleteMultipleOpen} onOpenChange={setDeleteMultipleOpen} onObjectsDeleted={() => { handleRefresh(); setSelectedKeys([]); }} bucketName={bucketName} objectKeys={selectedKeys} />}
+      {bucketName && isDeleteMultipleOpen && <DeleteMultipleObjectsDialog open={isDeleteMultipleOpen} onOpenChange={setDeleteMultipleOpen} onObjectsDeleted={() => { handleRefresh(); setSelectedKeys([]); }} bucketName={bucketName} objectKeys={selectedKeys} totalSize={totalSizeToDelete} />}
     </div>
   );
 };

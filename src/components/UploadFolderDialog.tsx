@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { s3Client } from "@/lib/s3Client";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -50,9 +51,9 @@ export const UploadFolderDialog = ({ open, onOpenChange, onUploadComplete, bucke
 
     try {
       const totalFiles = files.length;
+      let totalSize = 0;
       for (let i = 0; i < totalFiles; i++) {
         const file = files[i];
-        // Use webkitRelativePath to preserve folder structure
         const fileKey = `${currentPrefix}${file.webkitRelativePath}`;
         
         const fileBuffer = await file.arrayBuffer();
@@ -62,7 +63,16 @@ export const UploadFolderDialog = ({ open, onOpenChange, onUploadComplete, bucke
           Body: fileBuffer,
           ContentType: file.type,
         }));
+        totalSize += file.size;
         setUploadProgress(((i + 1) / totalFiles) * 100);
+      }
+
+      if (totalSize > 0) {
+        const { error } = await supabase.rpc('adjust_space_used', { space_change: totalSize });
+        if (error) {
+          console.error("Failed to update space usage:", error);
+          showError("Folder uploaded, but failed to update space usage.");
+        }
       }
 
       dismissToast(loadingToast);
