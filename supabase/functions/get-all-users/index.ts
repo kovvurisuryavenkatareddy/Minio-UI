@@ -60,8 +60,6 @@ serve(async (req) => {
         full_name: profile?.full_name || null,
         role: profile?.role || 'user',
         is_active: profile?.is_active ?? true,
-        space_limit: profile?.space_limit ?? 0,
-        space_used: profile?.space_used ?? 0,
       };
     });
 

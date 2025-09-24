@@ -52,15 +52,6 @@ export const UserManagementTable = () => {
 
   const refreshUsers = () => queryClient.invalidateQueries({ queryKey: ["allUsers"] });
 
-  const formatBytes = (bytes: number, decimals = 2) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const dm = decimals < 0 ? 0 : decimals;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-  };
-
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
@@ -75,26 +66,22 @@ export const UserManagementTable = () => {
               <TableHead>Email</TableHead>
               <TableHead>Role</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Space Used</TableHead>
-              <TableHead>Space Limit</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               Array.from({ length: 3 }).map((_, i) => (
-                <TableRow key={i}><TableCell colSpan={6}><Skeleton className="h-8 w-full" /></TableCell></TableRow>
+                <TableRow key={i}><TableCell colSpan={4}><Skeleton className="h-8 w-full" /></TableCell></TableRow>
               ))
             ) : isError ? (
-              <TableRow><TableCell colSpan={6}><Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Error</AlertTitle><AlertDescription>{(error as Error).message}</AlertDescription></Alert></TableCell></TableRow>
+              <TableRow><TableCell colSpan={4}><Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Error</AlertTitle><AlertDescription>{(error as Error).message}</AlertDescription></Alert></TableCell></TableRow>
             ) : (
               users?.map((user) => (
                 <TableRow key={user.id}>
                   <TableCell className="font-medium">{user.email}</TableCell>
                   <TableCell><Badge variant={user.role === 'admin' ? 'default' : 'secondary'}>{user.role}</Badge></TableCell>
                   <TableCell><Badge variant={user.is_active ? 'outline' : 'destructive'}>{user.is_active ? 'Active' : 'Disabled'}</Badge></TableCell>
-                  <TableCell>{formatBytes(user.space_used)}</TableCell>
-                  <TableCell>{formatBytes(user.space_limit)}</TableCell>
                   <TableCell className="text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4" /></Button></DropdownMenuTrigger>

@@ -8,7 +8,6 @@ export interface Profile {
   full_name: string | null;
   role: 'user' | 'admin';
   is_active: boolean;
-  space_used: number;
   email?: string;
 }
 
