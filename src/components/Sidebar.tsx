@@ -11,7 +11,6 @@ import {
 import { FolderTreeView } from "./FolderTreeView";
 import { Skeleton } from "./ui/skeleton";
 import { useProfile } from "@/contexts/ProfileContext";
-import { SpaceUsageIndicator } from "./SpaceUsageIndicator";
 
 interface Bucket {
   id: string;
@@ -123,7 +122,6 @@ const SidebarContent = ({ onClose }: { onClose?: () => void }) => {
           )}
         </ul>
       </div>
-      <SpaceUsageIndicator />
     </div>
   );
 };
