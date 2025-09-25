@@ -26,14 +26,13 @@ import { EditUserDialog } from "./EditUserDialog";
 import { DeleteUserDialog } from "./DeleteUserDialog";
 
 const fetchUsers = async (): Promise<Profile[]> => {
-  const { data, error } = await supabase.functions.invoke('get-all-users');
+  // RLS policy allows admins to select all profiles.
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*');
   
   if (error) {
-    // The edge function might return a structured error inside the data object
-    if (data && data.error) {
-      throw new Error(data.error);
-    }
-    throw new Error(error.message);
+    throw new Error(`Failed to fetch users: ${error.message}`);
   }
 
   return data;
