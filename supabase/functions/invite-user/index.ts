@@ -1,4 +1,4 @@
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { serve } from 'https://deno.land/std@0.190.0/http/server.ts'
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
@@ -43,7 +43,6 @@ serve(async (req) => {
     const user = inviteData.user;
     if (!user) throw new Error("User not found after invite.");
 
-    // The handle_new_user trigger will create the profile, we just need to update the role.
     const { error: profileError } = await supabaseAdmin
       .from('profiles')
       .update({ role: role })
@@ -56,9 +55,10 @@ serve(async (req) => {
       status: 200,
     })
   } catch (error) {
+    console.error('Error in invite-user function:', error.message);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 400,
+      status: 500,
     })
   }
 })
