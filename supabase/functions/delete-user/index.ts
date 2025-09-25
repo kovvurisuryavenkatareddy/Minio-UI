@@ -7,24 +7,32 @@ const corsHeaders = {
 }
 
 async function getServiceSupabase(req: Request): Promise<SupabaseClient> {
-    const authHeader = req.headers.get('Authorization')!
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: authHeader } } }
-    )
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) throw new Error("User not found");
+  const authHeader = req.headers.get('Authorization')
+  if (!authHeader) {
+    throw new Error("Missing Authorization header");
+  }
 
-    const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-    if (!profile || profile.role !== 'admin') {
-        throw new Error("Unauthorized: Not an admin");
-    }
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+    { global: { headers: { Authorization: authHeader } } }
+  )
 
-    return createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
+  const userResponse = await supabase.auth.getUser();
+  if (userResponse.error) throw userResponse.error;
+  if (!userResponse.data.user) throw new Error("User not found");
+  const user = userResponse.data.user;
+
+  const { data: profile, error: profileError } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+  if (profileError) throw profileError;
+  if (!profile || profile.role !== 'admin') {
+    throw new Error("Unauthorized: Not an admin");
+  }
+
+  return createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  );
 }
 
 serve(async (req) => {
