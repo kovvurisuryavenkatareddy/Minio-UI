@@ -13,10 +13,12 @@ import {
 import { FolderTreeView } from "./FolderTreeView";
 import { Skeleton } from "./ui/skeleton";
 import { useProfile } from "@/contexts/ProfileContext";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface Bucket {
   id: string;
   name: string;
+  owner_id: string;
 }
 
 interface SidebarProps {
@@ -26,12 +28,57 @@ interface SidebarProps {
 
 const BUCKETS_PER_PAGE = 30;
 
+const BucketListSection: React.FC<{
+  title: string;
+  buckets: Bucket[];
+  activeBucketName?: string;
+  onClose?: () => void;
+}> = ({ title, buckets, activeBucketName, onClose }) => {
+  if (buckets.length === 0) {
+    return null;
+  }
+
+  return (
+    <>
+      <li className="relative px-6 pt-3 pb-1">
+        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{title}</h2>
+      </li>
+      {buckets.map((bucket) => (
+        <li key={bucket.id} className="relative px-2 py-1">
+          <Collapsible defaultOpen={bucket.name === activeBucketName}>
+            <div className="flex items-center group px-4">
+              <CollapsibleTrigger className="p-1 -ml-1">
+                <ChevronRight className="h-4 w-4 transition-transform duration-200 group-data-[state=open]:rotate-90" />
+              </CollapsibleTrigger>
+              <Link
+                to={`/bucket/${bucket.name}`}
+                onClick={onClose}
+                className={cn(
+                  "font-semibold text-sm",
+                  bucket.name === activeBucketName &&
+                    "text-primary dark:text-white"
+                )}
+              >
+                {bucket.name}
+              </Link>
+            </div>
+            <CollapsibleContent>
+              <FolderTreeView bucketName={bucket.name} prefix="" />
+            </CollapsibleContent>
+          </Collapsible>
+        </li>
+      ))}
+    </>
+  );
+};
+
 const SidebarContent = ({ onClose }: { onClose?: () => void }) => {
   const params = useParams();
   const location = useLocation();
   const activeBucketName = params.bucketName;
   const { profile } = useProfile();
   const { ref, inView } = useInView();
+  const { session } = useAuth();
 
   const {
     data,
@@ -43,7 +90,7 @@ const SidebarContent = ({ onClose }: { onClose?: () => void }) => {
     queryFn: async ({ pageParam = 0 }) => {
       const from = pageParam * BUCKETS_PER_PAGE;
       const to = from + BUCKETS_PER_PAGE - 1;
-      const { data, error } = await supabase.from("buckets").select("id, name").range(from, to);
+      const { data, error } = await supabase.from("buckets").select("id, name, owner_id").range(from, to);
       if (error) throw new Error(error.message);
       return data || [];
     },
@@ -60,6 +107,8 @@ const SidebarContent = ({ onClose }: { onClose?: () => void }) => {
   }, [inView, hasNextPage, fetchNextPage]);
 
   const buckets = data?.pages.flat() || [];
+  const myBuckets = session ? buckets.filter(b => b.owner_id === session.user.id) : [];
+  const sharedBuckets = session ? buckets.filter(b => b.owner_id !== session.user.id) : [];
 
   return (
     <div className="h-full flex flex-col">
@@ -88,7 +137,7 @@ const SidebarContent = ({ onClose }: { onClose?: () => void }) => {
               )}
             >
               <HardDrive className="w-5 h-5" />
-              <span className="ml-4">My Buckets</span>
+              <span className="ml-4">All Buckets</span>
             </Link>
           </li>
           {profile?.role === 'admin' && (
@@ -118,31 +167,10 @@ const SidebarContent = ({ onClose }: { onClose?: () => void }) => {
               <Skeleton className="h-6 w-full" />
             </div>
           ) : (
-            buckets?.map((bucket) => (
-              <li key={bucket.id} className="relative px-2 py-1">
-                <Collapsible defaultOpen={bucket.name === activeBucketName}>
-                  <div className="flex items-center group px-4">
-                    <CollapsibleTrigger className="p-1 -ml-1">
-                      <ChevronRight className="h-4 w-4 transition-transform duration-200 group-data-[state=open]:rotate-90" />
-                    </CollapsibleTrigger>
-                    <Link
-                      to={`/bucket/${bucket.name}`}
-                      onClick={onClose}
-                      className={cn(
-                        "font-semibold text-sm",
-                        bucket.name === activeBucketName &&
-                          "text-primary dark:text-white"
-                      )}
-                    >
-                      {bucket.name}
-                    </Link>
-                  </div>
-                  <CollapsibleContent>
-                    <FolderTreeView bucketName={bucket.name} prefix="" />
-                  </CollapsibleContent>
-                </Collapsible>
-              </li>
-            ))
+            <>
+              <BucketListSection title="My Buckets" buckets={myBuckets} activeBucketName={activeBucketName} onClose={onClose} />
+              <BucketListSection title="Shared With Me" buckets={sharedBuckets} activeBucketName={activeBucketName} onClose={onClose} />
+            </>
           )}
           {hasNextPage && (
             <li ref={ref} className="px-6 py-3">
