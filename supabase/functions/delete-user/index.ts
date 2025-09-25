@@ -7,32 +7,42 @@ const corsHeaders = {
 }
 
 async function getServiceSupabase(req: Request): Promise<SupabaseClient> {
-  const authHeader = req.headers.get('Authorization')
-  if (!authHeader) {
-    throw new Error("Missing Authorization header");
-  }
-
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL') ?? '',
-    Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-    { global: { headers: { Authorization: authHeader } } }
-  )
-
-  const userResponse = await supabase.auth.getUser();
-  if (userResponse.error) throw userResponse.error;
-  if (!userResponse.data.user) throw new Error("User not found");
-  const user = userResponse.data.user;
-
-  const { data: profile, error: profileError } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-  if (profileError) throw profileError;
-  if (!profile || profile.role !== 'admin') {
-    throw new Error("Unauthorized: Not an admin");
-  }
-
-  return createClient(
+  // Create a service role client to perform the admin check
+  const supabaseAdmin = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
   );
+
+  // Get the user from the request's Authorization header
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader) {
+    throw new Error("Missing Authorization header");
+  }
+  const userClient = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+    { global: { headers: { Authorization: authHeader } } }
+  );
+  const { data: { user }, error: userError } = await userClient.auth.getUser();
+  if (userError) throw userError;
+  if (!user) throw new Error("User not found");
+
+  // Use the service role client to check the user's profile, bypassing RLS
+  const { data: profile, error: profileError } = await supabaseAdmin
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+
+  if (profileError) throw profileError;
+
+  // Perform the authorization check
+  if (!profile || profile.role !== 'admin') {
+    throw new Error("Unauthorized: User is not an admin.");
+  }
+
+  // Return the service role client for the main function logic
+  return supabaseAdmin;
 }
 
 serve(async (req) => {
