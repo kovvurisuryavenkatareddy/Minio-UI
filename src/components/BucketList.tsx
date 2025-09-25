@@ -23,7 +23,7 @@ interface Bucket {
   name: string;
   owner_id: string;
   public_level: string;
-  owner_name: string;
+  owner_email: string;
 }
 
 const BucketList = () => {
@@ -136,7 +136,7 @@ const BucketList = () => {
                         </Badge>
                       )}
                        <Badge variant="secondary" className="flex items-center gap-1 font-normal">
-                           <User className="h-3 w-3" /> {bucket.owner_name || 'N/A'}
+                           <User className="h-3 w-3" /> {bucket.owner_email || 'N/A'}
                         </Badge>
                     </div>
                     {session?.user.id === bucket.owner_id && (
