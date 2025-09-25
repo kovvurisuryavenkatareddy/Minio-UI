@@ -6,7 +6,7 @@ const Index = () => {
     <div className="flex flex-col justify-between h-full">
       <div>
         <h1 className="text-2xl font-semibold text-gray-700 dark:text-gray-200 mb-6">
-          All My Buckets
+          All Buckets
         </h1>
         <BucketList />
       </div>
