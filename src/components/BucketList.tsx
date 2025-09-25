@@ -13,7 +13,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Server, Trash2, PlusCircle, Globe, Lock, RefreshCw } from "lucide-react";
+import { Server, Trash2, PlusCircle, Globe, Lock, RefreshCw, User } from "lucide-react";
 import { CreateBucketDialog } from "./CreateBucketDialog";
 import { DeleteBucketDialog } from "./DeleteBucketDialog";
 import { Badge } from "./ui/badge";
@@ -23,6 +23,7 @@ interface Bucket {
   name: string;
   owner_id: string;
   public_level: string;
+  owner_name: string;
 }
 
 const BucketList = () => {
@@ -47,8 +48,8 @@ const BucketList = () => {
     }
 
     try {
-      const { data, error: supabaseError } = await supabase.from("buckets").select("*");
-      if (supabaseError) throw supabaseError;
+      const { data, error: rpcError } = await supabase.rpc("get_user_buckets");
+      if (rpcError) throw rpcError;
 
       setBuckets(data || []);
       setError(null);
@@ -134,6 +135,9 @@ const BucketList = () => {
                            <Lock className="h-3 w-3" /> Private
                         </Badge>
                       )}
+                       <Badge variant="secondary" className="flex items-center gap-1 font-normal">
+                           <User className="h-3 w-3" /> {bucket.owner_name || 'N/A'}
+                        </Badge>
                     </div>
                     {session?.user.id === bucket.owner_id && (
                       <Button

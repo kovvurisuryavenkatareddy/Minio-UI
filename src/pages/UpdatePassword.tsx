@@ -12,6 +12,7 @@ import { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 
 const passwordSchema = z.object({
+  fullName: z.string().min(1, "Full name is required."),
   password: z.string()
     .min(8, 'Password must be at least 8 characters long.')
     .regex(/[a-z]/, 'Password must contain at least one lowercase letter.')
@@ -33,6 +34,7 @@ const UpdatePassword = () => {
   const form = useForm<z.infer<typeof passwordSchema>>({
     resolver: zodResolver(passwordSchema),
     defaultValues: {
+      fullName: '',
       password: '',
       confirmPassword: '',
     },
@@ -56,10 +58,12 @@ const UpdatePassword = () => {
       return;
     }
 
-    // This will clear the flag for first-time users.
     await supabase
       .from('profiles')
-      .update({ requires_password_change: false })
+      .update({ 
+        requires_password_change: false,
+        full_name: values.fullName,
+      })
       .eq('id', user.id);
 
     showSuccess('Password updated successfully!');
@@ -71,14 +75,27 @@ const UpdatePassword = () => {
     <div className="flex justify-center items-center min-h-screen bg-gray-100 dark:bg-gray-900">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Update Your Password</CardTitle>
+          <CardTitle>Update Your Profile</CardTitle>
           <CardDescription>
-            Please choose a strong new password. It must be at least 8 characters long and include uppercase, lowercase, a number, and a special character.
+            Please enter your full name and choose a strong new password to continue.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <FormField
+                control={form.control}
+                name="fullName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Full Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., Jane Doe" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               <FormField
                 control={form.control}
                 name="password"
@@ -128,7 +145,7 @@ const UpdatePassword = () => {
                 )}
               />
               <Button type="submit" className="w-full" disabled={isSubmitting}>
-                {isSubmitting ? 'Updating...' : 'Update Password'}
+                {isSubmitting ? 'Updating...' : 'Update and Continue'}
               </Button>
             </form>
           </Form>

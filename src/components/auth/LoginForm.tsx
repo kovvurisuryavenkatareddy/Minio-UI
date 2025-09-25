@@ -31,14 +31,38 @@ export const LoginForm = ({ setView }: LoginFormProps) => {
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     setIsSubmitting(true);
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
       email: values.email,
       password: values.password,
     });
 
-    if (error) {
-      showError(error.message);
-    } else {
+    if (signInError) {
+      showError(signInError.message);
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (signInData.user) {
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('is_active')
+        .eq('id', signInData.user.id)
+        .single();
+
+      if (profileError) {
+        await supabase.auth.signOut();
+        showError("Could not verify your account status. Please try again.");
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (!profile.is_active) {
+        await supabase.auth.signOut();
+        showError("Your account has been disabled. Please contact an administrator.");
+        setIsSubmitting(false);
+        return;
+      }
+      
       navigate('/');
     }
     setIsSubmitting(false);
