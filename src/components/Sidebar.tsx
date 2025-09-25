@@ -38,37 +38,46 @@ const BucketListSection: React.FC<{
     return null;
   }
 
+  const isSectionActive = buckets.some(b => b.name === activeBucketName);
+
   return (
-    <>
-      <li className="relative px-6 pt-3 pb-1">
-        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{title}</h2>
-      </li>
-      {buckets.map((bucket) => (
-        <li key={bucket.id} className="relative px-2 py-1">
-          <Collapsible defaultOpen={bucket.name === activeBucketName}>
-            <div className="flex items-center group px-4">
-              <CollapsibleTrigger className="p-1 -ml-1">
-                <ChevronRight className="h-4 w-4 transition-transform duration-200 group-data-[state=open]:rotate-90" />
-              </CollapsibleTrigger>
-              <Link
-                to={`/bucket/${bucket.name}`}
-                onClick={onClose}
-                className={cn(
-                  "font-semibold text-sm",
-                  bucket.name === activeBucketName &&
-                    "text-primary dark:text-white"
-                )}
-              >
-                {bucket.name}
-              </Link>
-            </div>
-            <CollapsibleContent>
-              <FolderTreeView bucketName={bucket.name} prefix="" />
-            </CollapsibleContent>
-          </Collapsible>
-        </li>
-      ))}
-    </>
+    <li className="relative px-6 pt-3 pb-1">
+      <Collapsible defaultOpen={isSectionActive}>
+        <CollapsibleTrigger className="flex items-center justify-between w-full text-left text-xs font-semibold text-gray-400 uppercase tracking-wider group transition-colors hover:text-gray-600 dark:hover:text-gray-300">
+          <span>{title}</span>
+          <ChevronRight className="h-4 w-4 transition-transform duration-200 group-data-[state=open]:rotate-90" />
+        </CollapsibleTrigger>
+        <CollapsibleContent className="overflow-hidden text-sm transition-all data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down">
+          <ul className="pt-2 -ml-4 space-y-1">
+            {buckets.map((bucket) => (
+              <li key={bucket.id} className="relative px-2 py-1">
+                <Collapsible defaultOpen={bucket.name === activeBucketName}>
+                  <div className="flex items-center group px-4">
+                    <CollapsibleTrigger className="p-1 -ml-1 rounded-sm hover:bg-muted">
+                      <ChevronRight className="h-4 w-4 transition-transform duration-200 group-data-[state=open]:rotate-90" />
+                    </CollapsibleTrigger>
+                    <Link
+                      to={`/bucket/${bucket.name}`}
+                      onClick={onClose}
+                      className={cn(
+                        "font-semibold text-sm",
+                        bucket.name === activeBucketName &&
+                          "text-primary dark:text-white"
+                      )}
+                    >
+                      {bucket.name}
+                    </Link>
+                  </div>
+                  <CollapsibleContent className="overflow-hidden text-sm transition-all data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down">
+                    <FolderTreeView bucketName={bucket.name} prefix="" />
+                  </CollapsibleContent>
+                </Collapsible>
+              </li>
+            ))}
+          </ul>
+        </CollapsibleContent>
+      </Collapsible>
+    </li>
   );
 };
 
