@@ -45,18 +45,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Folder, File, AlertTriangle, Users, Trash2, MoreVertical, FolderPlus, Eye, Download, FolderUp, RefreshCw, History, Share2 } from "lucide-react";
+import { Folder, File, AlertTriangle, Users, Trash2, MoreVertical, FolderPlus, Eye, Download, RefreshCw, History, Share2, UploadCloud } from "lucide-react";
 import { showSuccess, showError } from "@/utils/toast";
 import { CreateFolderDialog } from "@/components/CreateFolderDialog";
-import { UploadFileDialog } from "@/components/UploadFileDialog";
 import { DeleteObjectDialog } from "@/components/DeleteObjectDialog";
 import { PreviewFileDialog } from "@/components/PreviewFileDialog";
-import { UploadFolderDialog } from "@/components/UploadFolderDialog";
 import { VersionHistoryDialog } from "@/components/VersionHistoryDialog";
 import { ShareFileDialog } from "@/components/ShareFileDialog";
 import { DeleteFolderDialog } from "@/components/DeleteFolderDialog";
 import { DeleteMultipleObjectsDialog } from "@/components/DeleteMultipleObjectsDialog";
 import { ManageAccessDialog } from "@/components/ManageAccessDialog";
+import { UploadDialog } from "@/components/UploadDialog";
 
 interface BucketDetails {
   id: string;
@@ -93,8 +92,7 @@ const BucketPage = () => {
 
   const [isManageAccessOpen, setManageAccessOpen] = useState(false);
   const [isCreateFolderOpen, setCreateFolderOpen] = useState(false);
-  const [isUploadFileOpen, setUploadFileOpen] = useState(false);
-  const [isUploadFolderOpen, setUploadFolderOpen] = useState(false);
+  const [isUploadOpen, setUploadOpen] = useState(false);
   const [objectToDelete, setObjectToDelete] = useState<{ key: string; size: number } | null>(null);
   const [folderToDelete, setFolderToDelete] = useState<string | null>(null);
   const [previewState, setPreviewState] = useState<PreviewState | null>(null);
@@ -302,7 +300,7 @@ const BucketPage = () => {
               {isOwner && bucketDetails && <Select value={bucketDetails.public_level} onValueChange={handlePrivacyChange}><SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="private">Private</SelectItem><SelectItem value="read-only">Public Read-Only</SelectItem><SelectItem value="read-write">Public Read/Write</SelectItem></SelectContent></Select>}
               {isOwner && <Button variant="outline" onClick={() => setManageAccessOpen(true)}><Users className="mr-2 h-4 w-4" /> Manage Access</Button>}
               <Button variant="outline" size="icon" onClick={handleRefresh} disabled={itemsIsFetching}><RefreshCw className={`h-4 w-4 ${itemsIsFetching ? 'animate-spin' : ''}`} /></Button>
-              {canWrite && <DropdownMenu><DropdownMenuTrigger asChild><Button>Actions</Button></DropdownMenuTrigger><DropdownMenuContent><DropdownMenuItem onClick={() => setUploadFileOpen(true)}><File className="mr-2 h-4 w-4" /> Upload Files</DropdownMenuItem><DropdownMenuItem onClick={() => setUploadFolderOpen(true)}><FolderUp className="mr-2 h-4 w-4" /> Upload Folder</DropdownMenuItem><DropdownMenuItem onClick={() => setCreateFolderOpen(true)}><FolderPlus className="mr-2 h-4 w-4" /> Create Folder</DropdownMenuItem></DropdownMenuContent></DropdownMenu>}
+              {canWrite && <DropdownMenu><DropdownMenuTrigger asChild><Button>Actions</Button></DropdownMenuTrigger><DropdownMenuContent><DropdownMenuItem onClick={() => setUploadOpen(true)}><UploadCloud className="mr-2 h-4 w-4" /> Upload</DropdownMenuItem><DropdownMenuItem onClick={() => setCreateFolderOpen(true)}><FolderPlus className="mr-2 h-4 w-4" /> Create Folder</DropdownMenuItem></DropdownMenuContent></DropdownMenu>}
             </div>
           </div>
         </CardHeader>
@@ -344,8 +342,7 @@ const BucketPage = () => {
       </Card>
 
       {bucketName && canWrite && <CreateFolderDialog open={isCreateFolderOpen} onOpenChange={setCreateFolderOpen} onFolderCreated={handleFolderCreated} bucketName={bucketName} currentPrefix={currentPrefix} />}
-      {bucketName && canWrite && <UploadFileDialog open={isUploadFileOpen} onOpenChange={setUploadFileOpen} onUploadComplete={handleRefresh} bucketName={bucketName} currentPrefix={currentPrefix} />}
-      {bucketName && canWrite && <UploadFolderDialog open={isUploadFolderOpen} onOpenChange={setUploadFolderOpen} onUploadComplete={handleRefresh} bucketName={bucketName} currentPrefix={currentPrefix} />}
+      {bucketName && canWrite && <UploadDialog open={isUploadOpen} onOpenChange={setUploadOpen} onUploadComplete={handleRefresh} bucketName={bucketName} currentPrefix={currentPrefix} />}
       {bucketName && objectToDelete && <DeleteObjectDialog open={!!objectToDelete} onOpenChange={() => setObjectToDelete(null)} onObjectDeleted={handleRefresh} bucketName={bucketName} objectKey={objectToDelete.key} objectSize={objectToDelete.size} />}
       {previewState && <PreviewFileDialog {...previewState} open={!!previewState} onOpenChange={() => setPreviewState(null)} />}
       {bucketName && historyTarget && <VersionHistoryDialog open={!!historyTarget} onOpenChange={() => setHistoryTarget(null)} onVersionRestored={handleRefresh} bucketName={bucketName} objectKey={historyTarget} />}
