@@ -12,10 +12,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { showSuccess, showError, showLoading, dismissToast } from "@/utils/toast";
 import { FolderUp } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface UploadFolderDialogProps {
   open: boolean;
@@ -29,10 +29,42 @@ export const UploadFolderDialog = ({ open, onOpenChange, onUploadComplete, bucke
   const [files, setFiles] = useState<FileList | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setFiles(event.target.files);
+  };
+
+  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const droppedFiles = e.dataTransfer.files;
+    if (droppedFiles && droppedFiles.length > 0) {
+      setFiles(droppedFiles);
+      if (fileInputRef.current) {
+        fileInputRef.current.files = droppedFiles;
+      }
+    }
   };
 
   const handleUpload = async () => {
@@ -54,6 +86,7 @@ export const UploadFolderDialog = ({ open, onOpenChange, onUploadComplete, bucke
       let totalSize = 0;
       for (let i = 0; i < totalFiles; i++) {
         const file = files[i];
+        // @ts-ignore - webkitRelativePath is not in standard TS lib but exists in browsers
         const fileKey = `${currentPrefix}${file.webkitRelativePath}`;
         
         const fileBuffer = await file.arrayBuffer();
@@ -100,14 +133,29 @@ export const UploadFolderDialog = ({ open, onOpenChange, onUploadComplete, bucke
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="grid w-full max-w-sm items-center gap-1.5">
-            <Label htmlFor="folder-upload">Folder</Label>
+          <div
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            className={cn(
+              "border-2 border-dashed rounded-lg p-8 text-center cursor-pointer",
+              "hover:border-primary transition-colors",
+              isDragging ? "border-primary bg-primary/10" : "border-gray-300 dark:border-gray-600"
+            )}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <FolderUp className="mx-auto h-12 w-12 text-gray-400" />
+            <p className="mt-2 text-sm text-muted-foreground">
+              Drag & drop a folder here, or click to select a folder
+            </p>
             <Input 
               id="folder-upload" 
               type="file" 
               onChange={handleFileChange} 
               ref={fileInputRef} 
               {...{ webkitdirectory: "true" }}
+              className="hidden"
             />
           </div>
           {files && files.length > 0 && (

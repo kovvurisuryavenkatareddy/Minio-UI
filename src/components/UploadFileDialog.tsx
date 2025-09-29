@@ -12,10 +12,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { showSuccess, showError, showLoading, dismissToast } from "@/utils/toast";
 import { UploadCloud } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface UploadFileDialogProps {
   open: boolean;
@@ -29,10 +29,42 @@ export const UploadFileDialog = ({ open, onOpenChange, onUploadComplete, bucketN
   const [files, setFiles] = useState<FileList | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setFiles(event.target.files);
+  };
+
+  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const droppedFiles = e.dataTransfer.files;
+    if (droppedFiles && droppedFiles.length > 0) {
+      setFiles(droppedFiles);
+      if (fileInputRef.current) {
+        fileInputRef.current.files = droppedFiles;
+      }
+    }
   };
 
   const handleUpload = async () => {
@@ -100,9 +132,30 @@ export const UploadFileDialog = ({ open, onOpenChange, onUploadComplete, bucketN
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="grid w-full max-w-sm items-center gap-1.5">
-            <Label htmlFor="files">Files</Label>
-            <Input id="files" type="file" multiple onChange={handleFileChange} ref={fileInputRef} />
+          <div
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            className={cn(
+              "border-2 border-dashed rounded-lg p-8 text-center cursor-pointer",
+              "hover:border-primary transition-colors",
+              isDragging ? "border-primary bg-primary/10" : "border-gray-300 dark:border-gray-600"
+            )}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <UploadCloud className="mx-auto h-12 w-12 text-gray-400" />
+            <p className="mt-2 text-sm text-muted-foreground">
+              Drag & drop files here, or click to select files
+            </p>
+            <Input
+              id="files"
+              type="file"
+              multiple
+              onChange={handleFileChange}
+              ref={fileInputRef}
+              className="hidden"
+            />
           </div>
           {files && files.length > 0 && (
             <div className="text-sm text-muted-foreground">
