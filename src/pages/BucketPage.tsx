@@ -271,12 +271,16 @@ const BucketPage = () => {
   };
 
   const handleDownloadSelection = async () => {
-    if (numSelected === 0) return showError("No items selected.");
+    if (numSelected === 0) {
+      showError("No items selected.");
+      return;
+    }
     const loadingToast = showLoading("Preparing download...");
-    const zip = new JSZip();
-    const filesToZip: { key: string; nameInZip: string }[] = [];
 
     try {
+      const zip = new JSZip();
+      const filesToZip: { key: string; nameInZip: string }[] = [];
+
       for (const item of selectedItems) {
         if (item.type === 'file') {
           filesToZip.push({ key: item.key, nameInZip: item.key });
@@ -293,12 +297,12 @@ const BucketPage = () => {
         }
       }
 
-      if (filesToZip.length === 0) return showError("Selected folders are empty.");
+      if (filesToZip.length === 0) {
+        showError("Selected folders are empty.");
+        return;
+      }
       
-      let filesZipped = 0;
       for (const file of filesToZip) {
-        dismissToast(loadingToast);
-        showLoading(`Zipping... (${++filesZipped}/${filesToZip.length})`);
         const url = await getPresignedUrl(file.key);
         if (!url) continue;
         const response = await fetch(url);
@@ -306,8 +310,6 @@ const BucketPage = () => {
         zip.file(file.nameInZip, blob);
       }
 
-      dismissToast(loadingToast);
-      showLoading("Generating zip file...");
       const zipBlob = await zip.generateAsync({ type: "blob" });
       saveAs(zipBlob, `${bucketName}-download.zip`);
       showSuccess("Download started!");
