@@ -55,7 +55,7 @@ import { PreviewFileDialog } from "@/components/PreviewFileDialog";
 import { VersionHistoryDialog } from "@/components/VersionHistoryDialog";
 import { ShareFileDialog } from "@/components/ShareFileDialog";
 import { DeleteFolderDialog } from "@/components/DeleteFolderDialog";
-import { DeleteMultipleObjectsDialog } from "@/components/DeleteMultipleObjectsDialog";
+import { DeleteSelectionDialog } from "@/components/DeleteSelectionDialog";
 import { ManageAccessDialog } from "@/components/ManageAccessDialog";
 import { UploadDialog } from "@/components/UploadDialog";
 
@@ -107,7 +107,7 @@ const BucketPage = () => {
   const [historyTarget, setHistoryTarget] = useState<string | null>(null);
   const [objectToShare, setObjectToShare] = useState<string | null>(null);
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]);
-  const [isDeleteMultipleOpen, setDeleteMultipleOpen] = useState(false);
+  const [isDeleteSelectionOpen, setDeleteSelectionOpen] = useState(false);
 
   const { data: bucketInfo, isError: isBucketInfoError, error: bucketInfoError } = useQuery({
     queryKey: ['bucketInfo', bucketName],
@@ -254,10 +254,6 @@ const BucketPage = () => {
   const allItems = itemsData?.pages.flatMap(page => page.items) || [];
   const numSelected = selectedItems.length;
 
-  const totalSizeToDelete = useMemo(() => {
-    return selectedItems.filter(i => i.type === 'file').reduce((sum, obj) => sum + (obj.size || 0), 0);
-  }, [selectedItems]);
-
   const handleSelectAll = (checked: boolean) => {
     setSelectedItems(checked ? allItems.map(item => ({
       key: item.type === 'file' ? item.Key! : item.Prefix!,
@@ -360,7 +356,7 @@ const BucketPage = () => {
             <div>{renderBreadcrumbs()}</div>
             <div className="flex items-center space-x-2">
               {numSelected > 0 && <Button variant="outline" size="sm" onClick={handleDownloadSelection}><Download className="mr-2 h-4 w-4" />Download ({numSelected})</Button>}
-              {canWrite && numSelected > 0 && <Button variant="destructive" size="sm" onClick={() => setDeleteMultipleOpen(true)}><Trash2 className="mr-2 h-4 w-4" />Delete ({numSelected})</Button>}
+              {canWrite && numSelected > 0 && <Button variant="destructive" size="sm" onClick={() => setDeleteSelectionOpen(true)}><Trash2 className="mr-2 h-4 w-4" />Delete ({numSelected})</Button>}
               {isOwner && bucketDetails && <Select value={bucketDetails.public_level} onValueChange={handlePrivacyChange}><SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="private">Private</SelectItem><SelectItem value="read-only">Public Read-Only</SelectItem><SelectItem value="read-write">Public Read/Write</SelectItem></SelectContent></Select>}
               {isOwner && <Button variant="outline" onClick={() => setManageAccessOpen(true)}><Users className="mr-2 h-4 w-4" /> Manage Access</Button>}
               <Button variant="outline" size="icon" onClick={handleRefresh} disabled={itemsIsFetching}><RefreshCw className={`h-4 w-4 ${itemsIsFetching ? 'animate-spin' : ''}`} /></Button>
@@ -415,7 +411,7 @@ const BucketPage = () => {
       {bucketName && historyTarget && <VersionHistoryDialog open={!!historyTarget} onOpenChange={() => setHistoryTarget(null)} onVersionRestored={handleRefresh} bucketName={bucketName} objectKey={historyTarget} />}
       {bucketName && objectToShare && <ShareFileDialog open={!!objectToShare} onOpenChange={() => setObjectToShare(null)} bucketName={bucketName} objectKey={objectToShare} />}
       {bucketName && folderToDelete && <DeleteFolderDialog open={!!folderToDelete} onOpenChange={() => setFolderToDelete(null)} onFolderDeleted={handleRefresh} bucketName={bucketName} folderPrefix={folderToDelete} />}
-      {bucketName && isDeleteMultipleOpen && <DeleteMultipleObjectsDialog open={isDeleteMultipleOpen} onOpenChange={setDeleteMultipleOpen} onObjectsDeleted={handleRefresh} bucketName={bucketName} objectKeys={selectedItems.filter(i => i.type === 'file').map(i => i.key)} totalSize={totalSizeToDelete} />}
+      {bucketName && isDeleteSelectionOpen && <DeleteSelectionDialog open={isDeleteSelectionOpen} onOpenChange={setDeleteSelectionOpen} onDeletionComplete={handleRefresh} bucketName={bucketName} selectedItems={selectedItems} />}
       {bucketDetails && <ManageAccessDialog open={isManageAccessOpen} onOpenChange={setManageAccessOpen} bucketDetails={bucketDetails} members={members} bucketName={bucketName} />}
     </div>
   );
