@@ -7,6 +7,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { ListObjectsV2Command, _Object, CommonPrefix, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 import {
   Card,
   CardContent,
@@ -46,7 +48,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Folder, File, AlertTriangle, Users, Trash2, MoreVertical, FolderPlus, Eye, Download, RefreshCw, History, Share2, UploadCloud } from "lucide-react";
-import { showSuccess, showError } from "@/utils/toast";
+import { showSuccess, showError, showLoading, dismissToast } from "@/utils/toast";
 import { CreateFolderDialog } from "@/components/CreateFolderDialog";
 import { DeleteObjectDialog } from "@/components/DeleteObjectDialog";
 import { PreviewFileDialog } from "@/components/PreviewFileDialog";
@@ -71,6 +73,12 @@ interface BucketMember {
 }
 
 type BucketItem = (_Object & { type: 'file' }) | (CommonPrefix & { type: 'folder' });
+
+interface SelectedItem {
+  key: string;
+  type: 'file' | 'folder';
+  size: number;
+}
 
 interface PreviewState {
   url: string;
@@ -98,7 +106,7 @@ const BucketPage = () => {
   const [previewState, setPreviewState] = useState<PreviewState | null>(null);
   const [historyTarget, setHistoryTarget] = useState<string | null>(null);
   const [objectToShare, setObjectToShare] = useState<string | null>(null);
-  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
+  const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]);
   const [isDeleteMultipleOpen, setDeleteMultipleOpen] = useState(false);
 
   const { data: bucketInfo, isError: isBucketInfoError, error: bucketInfoError } = useQuery({
@@ -179,6 +187,7 @@ const BucketPage = () => {
     queryClient.invalidateQueries({ queryKey: ['bucketItems', bucketName, currentPrefix] });
     queryClient.invalidateQueries({ queryKey: ['sidebarTree', bucketName] });
     queryClient.invalidateQueries({ queryKey: ["profile"] });
+    setSelectedItems([]);
   };
 
   const handleFolderCreated = (newFolderKey: string) => {
@@ -242,20 +251,72 @@ const BucketPage = () => {
   }
 
   const isOwner = session?.user.id === bucketDetails?.owner_id;
-  const fileItems = items.filter(item => item.type === 'file') as (_Object & { type: 'file' })[];
-  const numSelected = selectedKeys.length;
-  const numFiles = fileItems.length;
+  const allItems = itemsData?.pages.flatMap(page => page.items) || [];
+  const numSelected = selectedItems.length;
 
   const totalSizeToDelete = useMemo(() => {
-    return fileItems.filter(f => selectedKeys.includes(f.Key!)).reduce((sum, obj) => sum + (obj.Size || 0), 0);
-  }, [fileItems, selectedKeys]);
+    return selectedItems.filter(i => i.type === 'file').reduce((sum, obj) => sum + (obj.size || 0), 0);
+  }, [selectedItems]);
 
   const handleSelectAll = (checked: boolean) => {
-    setSelectedKeys(checked ? fileItems.map(file => file.Key!) : []);
+    setSelectedItems(checked ? allItems.map(item => ({
+      key: item.type === 'file' ? item.Key! : item.Prefix!,
+      type: item.type,
+      size: item.type === 'file' ? item.Size || 0 : 0,
+    })) : []);
   };
 
-  const handleSelectOne = (key: string, checked: boolean) => {
-    setSelectedKeys(prev => checked ? [...prev, key] : prev.filter(k => k !== key));
+  const handleSelectOne = (key: string, type: 'file' | 'folder', size: number, checked: boolean) => {
+    setSelectedItems(prev => checked ? [...prev, { key, type, size }] : prev.filter(i => i.key !== key));
+  };
+
+  const handleDownloadSelection = async () => {
+    if (numSelected === 0) return showError("No items selected.");
+    const loadingToast = showLoading("Preparing download...");
+    const zip = new JSZip();
+    const filesToZip: { key: string; nameInZip: string }[] = [];
+
+    try {
+      for (const item of selectedItems) {
+        if (item.type === 'file') {
+          filesToZip.push({ key: item.key, nameInZip: item.key });
+        } else {
+          let continuationToken: string | undefined = undefined;
+          do {
+            const command = new ListObjectsV2Command({ Bucket: bucketName, Prefix: item.key, ContinuationToken: continuationToken });
+            const response = await s3Client.send(command);
+            for (const content of response.Contents ?? []) {
+              if (content.Key) filesToZip.push({ key: content.Key, nameInZip: content.Key });
+            }
+            continuationToken = response.NextContinuationToken;
+          } while (continuationToken);
+        }
+      }
+
+      if (filesToZip.length === 0) return showError("Selected folders are empty.");
+      
+      let filesZipped = 0;
+      for (const file of filesToZip) {
+        dismissToast(loadingToast);
+        showLoading(`Zipping... (${++filesZipped}/${filesToZip.length})`);
+        const url = await getPresignedUrl(file.key);
+        if (!url) continue;
+        const response = await fetch(url);
+        const blob = await response.blob();
+        zip.file(file.nameInZip, blob);
+      }
+
+      dismissToast(loadingToast);
+      showLoading("Generating zip file...");
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      saveAs(zipBlob, `${bucketName}-download.zip`);
+      showSuccess("Download started!");
+    } catch (err: any) {
+      console.error(err);
+      showError(err.message || "Failed to create zip file.");
+    } finally {
+      dismissToast(loadingToast);
+    }
   };
 
   const renderBreadcrumbs = () => {
@@ -296,6 +357,7 @@ const BucketPage = () => {
           <div className="flex justify-between items-start">
             <div>{renderBreadcrumbs()}</div>
             <div className="flex items-center space-x-2">
+              {numSelected > 0 && <Button variant="outline" size="sm" onClick={handleDownloadSelection}><Download className="mr-2 h-4 w-4" />Download ({numSelected})</Button>}
               {canWrite && numSelected > 0 && <Button variant="destructive" size="sm" onClick={() => setDeleteMultipleOpen(true)}><Trash2 className="mr-2 h-4 w-4" />Delete ({numSelected})</Button>}
               {isOwner && bucketDetails && <Select value={bucketDetails.public_level} onValueChange={handlePrivacyChange}><SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="private">Private</SelectItem><SelectItem value="read-only">Public Read-Only</SelectItem><SelectItem value="read-write">Public Read/Write</SelectItem></SelectContent></Select>}
               {isOwner && <Button variant="outline" onClick={() => setManageAccessOpen(true)}><Users className="mr-2 h-4 w-4" /> Manage Access</Button>}
@@ -307,35 +369,38 @@ const BucketPage = () => {
         <CardContent>
           <Table>
             <TableHeader><TableRow>
-              {canWrite && <TableHead className="w-[40px]"><Checkbox checked={numFiles > 0 && numSelected === numFiles ? true : numSelected > 0 ? 'indeterminate' : false} onCheckedChange={(checked) => handleSelectAll(!!checked)} disabled={numFiles === 0} /></TableHead>}
+              <TableHead className="w-[40px]"><Checkbox checked={allItems.length > 0 && numSelected === allItems.length ? true : numSelected > 0 ? 'indeterminate' : false} onCheckedChange={(checked) => handleSelectAll(!!checked)} disabled={allItems.length === 0} /></TableHead>
               <TableHead>Name</TableHead><TableHead>Size</TableHead><TableHead>Last Modified</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
             <TableBody>
               {items.length > 0 ? (
                 items.map((item) => {
+                  const key = item.type === 'folder' ? item.Prefix! : item.Key!;
                   const name = item.type === 'folder' ? item.Prefix?.replace(currentPrefix, '').replace('/', '') : item.Key?.replace(currentPrefix, '');
+                  const size = item.type === 'file' ? item.Size || 0 : 0;
                   return (
-                    <TableRow key={item.type === 'folder' ? item.Prefix : item.Key} onDoubleClick={() => { if (item.type === 'folder' && item.Prefix) navigate(`/bucket/${bucketName}/${item.Prefix}`); }} className={item.type === 'folder' ? 'cursor-pointer hover:bg-muted/50' : ''}>
-                      {canWrite && <TableCell>{item.type === 'file' && item.Key ? <Checkbox checked={selectedKeys.includes(item.Key)} onCheckedChange={(checked) => handleSelectOne(item.Key!, !!checked)} /> : null}</TableCell>}
+                    <TableRow key={key} onDoubleClick={() => { if (item.type === 'folder' && item.Prefix) navigate(`/bucket/${bucketName}/${item.Prefix}`); }} className={item.type === 'folder' ? 'cursor-pointer hover:bg-muted/50' : ''}>
+                      <TableCell><Checkbox checked={selectedItems.some(i => i.key === key)} onCheckedChange={(checked) => handleSelectOne(key, item.type, size, !!checked)} /></TableCell>
                       <TableCell className="font-medium flex items-center">{item.type === 'folder' ? <Folder className="mr-2 h-4 w-4 text-blue-500" /> : <File className="mr-2 h-4 w-4 text-muted-foreground" />}<span>{name}</span></TableCell>
                       <TableCell>{item.type === 'file' ? formatBytes(item.Size) : '-'}</TableCell>
                       <TableCell>{item.type === 'file' ? item.LastModified?.toLocaleString() : '-'}</TableCell>
                       <TableCell className="text-right">
                         <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4" /></Button></DropdownMenuTrigger>
                           <DropdownMenuContent>
-                            {item.type === 'file' && item.Key && (<>
-                                <DropdownMenuItem onClick={() => handlePreview(item.Key!)}><Eye className="mr-2 h-4 w-4" /> Preview</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleDownload(item.Key!)}><Download className="mr-2 h-4 w-4" /> Download</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => setObjectToShare(item.Key!)}><Share2 className="mr-2 h-4 w-4" /> Share</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => setHistoryTarget(item.Key!)}><History className="mr-2 h-4 w-4" /> Version History</DropdownMenuItem></>)}
-                            {canWrite && <DropdownMenuItem className="text-destructive" onClick={() => item.type === 'file' ? setObjectToDelete({ key: item.Key!, size: (item as _Object).Size || 0 }) : setFolderToDelete(item.Prefix!)}><Trash2 className="mr-2 h-4 w-4" /> Delete</DropdownMenuItem>}
+                            {item.type === 'file' && (<>
+                                <DropdownMenuItem onClick={() => handlePreview(key)}><Eye className="mr-2 h-4 w-4" /> Preview</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleDownload(key)}><Download className="mr-2 h-4 w-4" /> Download</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => setObjectToShare(key)}><Share2 className="mr-2 h-4 w-4" /> Share</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => setHistoryTarget(key)}><History className="mr-2 h-4 w-4" /> Version History</DropdownMenuItem></>)}
+                            {item.type === 'folder' && <DropdownMenuItem onClick={() => handleDownloadSelection()}><Download className="mr-2 h-4 w-4" /> Download</DropdownMenuItem>}
+                            {canWrite && <DropdownMenuItem className="text-destructive" onClick={() => item.type === 'file' ? setObjectToDelete({ key: key, size: size }) : setFolderToDelete(key)}><Trash2 className="mr-2 h-4 w-4" /> Delete</DropdownMenuItem>}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
                     </TableRow>
                   );
                 })
-              ) : <TableRow><TableCell colSpan={canWrite ? 5 : 4} className="text-center py-8 text-muted-foreground">This folder is empty.</TableCell></TableRow>}
-              {hasNextPage && <TableRow ref={ref}><TableCell colSpan={canWrite ? 5 : 4}><div className="flex justify-center"><Skeleton className="h-8 w-full" /></div></TableCell></TableRow>}
+              ) : <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">This folder is empty.</TableCell></TableRow>}
+              {hasNextPage && <TableRow ref={ref}><TableCell colSpan={5}><div className="flex justify-center"><Skeleton className="h-8 w-full" /></div></TableCell></TableRow>}
             </TableBody>
           </Table>
         </CardContent>
@@ -348,7 +413,7 @@ const BucketPage = () => {
       {bucketName && historyTarget && <VersionHistoryDialog open={!!historyTarget} onOpenChange={() => setHistoryTarget(null)} onVersionRestored={handleRefresh} bucketName={bucketName} objectKey={historyTarget} />}
       {bucketName && objectToShare && <ShareFileDialog open={!!objectToShare} onOpenChange={() => setObjectToShare(null)} bucketName={bucketName} objectKey={objectToShare} />}
       {bucketName && folderToDelete && <DeleteFolderDialog open={!!folderToDelete} onOpenChange={() => setFolderToDelete(null)} onFolderDeleted={handleRefresh} bucketName={bucketName} folderPrefix={folderToDelete} />}
-      {bucketName && isDeleteMultipleOpen && <DeleteMultipleObjectsDialog open={isDeleteMultipleOpen} onOpenChange={setDeleteMultipleOpen} onObjectsDeleted={() => { handleRefresh(); setSelectedKeys([]); }} bucketName={bucketName} objectKeys={selectedKeys} totalSize={totalSizeToDelete} />}
+      {bucketName && isDeleteMultipleOpen && <DeleteMultipleObjectsDialog open={isDeleteMultipleOpen} onOpenChange={setDeleteMultipleOpen} onObjectsDeleted={handleRefresh} bucketName={bucketName} objectKeys={selectedItems.filter(i => i.type === 'file').map(i => i.key)} totalSize={totalSizeToDelete} />}
       {bucketDetails && <ManageAccessDialog open={isManageAccessOpen} onOpenChange={setManageAccessOpen} bucketDetails={bucketDetails} members={members} bucketName={bucketName} />}
     </div>
   );
